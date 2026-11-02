@@ -167,6 +167,25 @@ play_apple_tv_title:
           sent only for playback requests; actual playback is not verified.
         year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
           }}'
+        trivia_fact: '{% set item = matches[0] %}
+
+          {% set ns = namespace(facts=[]) %}
+
+          {% set year = item.get(''releaseYear'', item.get(''firstAirYear'')) %}
+
+          {% if year %}{% set ns.facts = ns.facts + [(''It premiered in '' if item.get(''showType'')
+          == ''series'' else ''It was released in '') ~ year ~ ''.''] %}{% endif %}
+
+          {% for name in item.get(''directors'', [])[:5] %}{% if name is string and
+          name | trim %}{% set ns.facts = ns.facts + [''Directed by '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {% for name in item.get(''cast'', [])[:8] %}{% if name is string and name
+          | trim %}{% set ns.facts = ns.facts + [''The cast includes '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {{ ns.facts | random if ns.facts else '''' }}'
+        trivia_source: Streaming Availability API catalog metadata
   - stop: Apple TV+ request sent.
     response_variable: launch_result
 launch_apple_tv_living_room:

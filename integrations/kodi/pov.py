@@ -202,6 +202,10 @@ def perform(rpc, request, sleep=time.sleep):
     path = urlunsplit(parsed._replace(query=urlencode(params + [("autoplay", "false" if result["media_type"] == "movie" else "true")])))
     if rpc("Player.Open", {"item": {"file": path}}) != "OK":
         return {**result, "status": "failed", "message": "Kodi did not accept the playback request."}
+    if result.get("year"):
+        label = "premiered" if result["media_type"] == "series" else "was released"
+        result["trivia_fact"] = f"It {label} in {result['year']}."
+        result["trivia_source"] = "POV catalog metadata"
     result.update(status="playback_requested", command_sent=True, playback_verified=False,
                   message="POV accepted the playback request. It may still be finding sources or waiting for source selection; playback is not verified.")
     if result["media_type"] == "movie":

@@ -182,6 +182,26 @@ play_netflix_title:
           playback_verified: false
           restart_verified: false
           message: '{{ restart_outcome.message }}'
+          trivia_fact: '{% set item = matches[0] %}
+
+            {% set ns = namespace(facts=[]) %}
+
+            {% set year = item.get(''releaseYear'', item.get(''firstAirYear'')) %}
+
+            {% if year %}{% set ns.facts = ns.facts + [(''It premiered in '' if item.get(''showType'')
+            == ''series'' else ''It was released in '') ~ year ~ ''.''] %}{% endif
+            %}
+
+            {% for name in item.get(''directors'', [])[:5] %}{% if name is string
+            and name | trim %}{% set ns.facts = ns.facts + [''Directed by '' ~ name
+            ~ ''.''] %}{% endif %}{% endfor %}
+
+            {% for name in item.get(''cast'', [])[:8] %}{% if name is string and name
+            | trim %}{% set ns.facts = ns.facts + [''The cast includes '' ~ name ~
+            ''.''] %}{% endif %}{% endfor %}
+
+            {{ ns.facts | random if ns.facts else '''' }}'
+          trivia_source: Streaming Availability API catalog metadata
     - stop: Netflix start-over request finished.
       response_variable: restart_response
   - variables:
@@ -193,6 +213,25 @@ play_netflix_title:
         command_sent: true
         playback_verified: false
         message: Netflix title link sent. Playback and profile selection are not verified.
+        trivia_fact: '{% set item = matches[0] %}
+
+          {% set ns = namespace(facts=[]) %}
+
+          {% set year = item.get(''releaseYear'', item.get(''firstAirYear'')) %}
+
+          {% if year %}{% set ns.facts = ns.facts + [(''It premiered in '' if item.get(''showType'')
+          == ''series'' else ''It was released in '') ~ year ~ ''.''] %}{% endif %}
+
+          {% for name in item.get(''directors'', [])[:5] %}{% if name is string and
+          name | trim %}{% set ns.facts = ns.facts + [''Directed by '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {% for name in item.get(''cast'', [])[:8] %}{% if name is string and name
+          | trim %}{% set ns.facts = ns.facts + [''The cast includes '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {{ ns.facts | random if ns.facts else '''' }}'
+        trivia_source: Streaming Availability API catalog metadata
   - stop: Netflix title link sent.
     response_variable: launch_result
 play_hbo_title:
@@ -386,6 +425,25 @@ play_hbo_title:
         from_start: '{{ from_start | default(false) and start_playback | default(true)
           }}'
         restart_verified: false
+        trivia_fact: '{% set item = matches[0] %}
+
+          {% set ns = namespace(facts=[]) %}
+
+          {% set year = item.get(''releaseYear'', item.get(''firstAirYear'')) %}
+
+          {% if year %}{% set ns.facts = ns.facts + [(''It premiered in '' if item.get(''showType'')
+          == ''series'' else ''It was released in '') ~ year ~ ''.''] %}{% endif %}
+
+          {% for name in item.get(''directors'', [])[:5] %}{% if name is string and
+          name | trim %}{% set ns.facts = ns.facts + [''Directed by '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {% for name in item.get(''cast'', [])[:8] %}{% if name is string and name
+          | trim %}{% set ns.facts = ns.facts + [''The cast includes '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {{ ns.facts | random if ns.facts else '''' }}'
+        trivia_source: Streaming Availability API catalog metadata
   - stop: HBO Max request sent.
     response_variable: launch_result
 launch_hbo_max_living_room:
@@ -703,6 +761,25 @@ play_apple_tv_title:
           sent only for playback requests; actual playback is not verified.
         year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
           }}'
+        trivia_fact: '{% set item = matches[0] %}
+
+          {% set ns = namespace(facts=[]) %}
+
+          {% set year = item.get(''releaseYear'', item.get(''firstAirYear'')) %}
+
+          {% if year %}{% set ns.facts = ns.facts + [(''It premiered in '' if item.get(''showType'')
+          == ''series'' else ''It was released in '') ~ year ~ ''.''] %}{% endif %}
+
+          {% for name in item.get(''directors'', [])[:5] %}{% if name is string and
+          name | trim %}{% set ns.facts = ns.facts + [''Directed by '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {% for name in item.get(''cast'', [])[:8] %}{% if name is string and name
+          | trim %}{% set ns.facts = ns.facts + [''The cast includes '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {{ ns.facts | random if ns.facts else '''' }}'
+        trivia_source: Streaming Availability API catalog metadata
   - stop: Apple TV+ request sent.
     response_variable: launch_result
 launch_apple_tv_living_room:
@@ -926,6 +1003,25 @@ play_prime_video_title:
         from_start: '{{ from_start | default(false) and start_playback | default(true)
           }}'
         restart_verified: false
+        trivia_fact: '{% set item = matches[0] %}
+
+          {% set ns = namespace(facts=[]) %}
+
+          {% set year = item.get(''releaseYear'', item.get(''firstAirYear'')) %}
+
+          {% if year %}{% set ns.facts = ns.facts + [(''It premiered in '' if item.get(''showType'')
+          == ''series'' else ''It was released in '') ~ year ~ ''.''] %}{% endif %}
+
+          {% for name in item.get(''directors'', [])[:5] %}{% if name is string and
+          name | trim %}{% set ns.facts = ns.facts + [''Directed by '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {% for name in item.get(''cast'', [])[:8] %}{% if name is string and name
+          | trim %}{% set ns.facts = ns.facts + [''The cast includes '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {{ ns.facts | random if ns.facts else '''' }}'
+        trivia_source: Streaming Availability API catalog metadata
   - stop: Prime Video request sent.
     response_variable: launch_result
 launch_prime_video_living_room:

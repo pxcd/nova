@@ -209,6 +209,25 @@ play_prime_video_title:
         from_start: '{{ from_start | default(false) and start_playback | default(true)
           }}'
         restart_verified: false
+        trivia_fact: '{% set item = matches[0] %}
+
+          {% set ns = namespace(facts=[]) %}
+
+          {% set year = item.get(''releaseYear'', item.get(''firstAirYear'')) %}
+
+          {% if year %}{% set ns.facts = ns.facts + [(''It premiered in '' if item.get(''showType'')
+          == ''series'' else ''It was released in '') ~ year ~ ''.''] %}{% endif %}
+
+          {% for name in item.get(''directors'', [])[:5] %}{% if name is string and
+          name | trim %}{% set ns.facts = ns.facts + [''Directed by '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {% for name in item.get(''cast'', [])[:8] %}{% if name is string and name
+          | trim %}{% set ns.facts = ns.facts + [''The cast includes '' ~ name ~ ''.'']
+          %}{% endif %}{% endfor %}
+
+          {{ ns.facts | random if ns.facts else '''' }}'
+        trivia_source: Streaming Availability API catalog metadata
   - stop: Prime Video request sent.
     response_variable: launch_result
 launch_prime_video_living_room:
