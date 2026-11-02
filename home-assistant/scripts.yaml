@@ -312,8 +312,9 @@ play_netflix_title:
       entity_id: media_player.sony_xr_55x90l_2
     data:
       media_content_type: url
-      media_content_id: https://www.netflix.com/{{ 'watch' if season is defined and
-        episode is defined else 'title' }}/{{ netflix_ids[0] }}?source=30
+      media_content_id: https://www.netflix.com/{{ 'watch' if (season is defined and
+        episode is defined) or (matches[0].get('showType') == 'movie' and not (from_start
+        | default(false))) else 'title' }}/{{ netflix_ids[0] }}?source=30
   - if: '{{ from_start | default(false) }}'
     then:
     - delay: 00:00:02

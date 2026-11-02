@@ -29,7 +29,9 @@ oversized catalog data, normal Play, and preservation of explicit restart.
 
 ## Normal playback
 
-Ordinary title and episode launches send Home → selected link, wait up to 15 seconds
+Ordinary movie and explicit episode launches use `/watch/<id>?source=30`. Series
+resume and movie start-over requests retain `/title/<id>?source=30`. All ordinary
+launches send Home → selected link, wait up to 15 seconds
 for Netflix foreground, allow two seconds to settle, then send a dedicated
 `media_player.media_play` through Android TV Remote. No OK or directional selection
 is used. If Netflix is not confirmed in foreground, Play is blocked. Successful
@@ -37,9 +39,12 @@ command delivery returns `playback_requested`, `play_command_sent=true`, and
 `playback_verified=false`.
 
 The user confirmed dedicated Play started Joe Rogan: Burn the Boats after both
-title and watch links had left it on the info/rating screen. The complete updated
-flow still needs an isolated user test: another title request was active during
-the attempted live check. Foreground detection does not identify the loaded title,
+title and watch links had left it on the info/rating screen. A later warm switch using a title-page link plus Play resumed Edge of Tomorrow
+instead of the requested Uncut Gems. A direct watch link plus Play switched to
+Uncut Gems correctly. After deploying this routing-only fix, a plain White Chicks
+request through the complete shared script switched away from Uncut Gems; the
+user confirmed playback. Performer selection and exact-title requests use this
+same launch path. Foreground detection does not identify the loaded title,
 splash screen or profile picker; those timing cases remain best effort. Restart
 requests return through their existing branch before this normal-play step.
 
