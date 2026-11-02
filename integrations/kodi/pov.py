@@ -1,4 +1,4 @@
-"""Small, bounded POV JSON-RPC bridge. Uses POV native autoplay for NOVA playback requests."""
+"""Bounded POV bridge with identity-checked resolution and language selection."""
 
 import base64
 from datetime import date
@@ -145,39 +145,175 @@ def source_movie_year(name, title):
     return int(year[1]) if year else None
 
 
-def select_movie_source(rpc, title, year, sleep):
-    # Cloud sources can match remakes by title alone. Check the visible release
-    # filename before selecting; Kodi's playback metadata can describe the wrong stream.
-    name_key = "ListItem.Property(tikiskins.name)"
-    title_key = "Window.Property(tikiskins.title)"
+def resolution_value(value):
+    if value is None:
+        return "highest"
+    aliases = {"highest": "highest", "4k": "2160p", "2160p": "2160p",
+               "1080p": "1080p", "720p": "720p", "sd": "SD"}
+    return aliases.get(value.lower()) if isinstance(value, str) else None
+
+
+def source_resolution(value):
+    tokens = re.findall(r"(?<![a-z0-9])(2160p|4k|1080p|720p|576p|480p|sd)(?![a-z0-9])", value.lower())
+    if not tokens:
+        return None
+    return {"4k": "2160p", "576p": "SD", "480p": "SD", "sd": "SD"}.get(tokens[0], tokens[0])
+
+
+def source_matches(name, result):
+    if result["media_type"] == "movie":
+        return source_movie_year(name, result["title"]) == result["year"]
+    cleaned = re.sub(r"[^a-z0-9]+", " ", unicodedata.normalize("NFKD", name).casefold())
+    title = re.sub(r"[^a-z0-9]+", " ", unicodedata.normalize("NFKD", result["title"]).casefold()).strip()
+    if not re.search(r"\b" + re.escape(title) + r"\b", cleaned):
+        return False
+    episode = re.search(r"\b(?:s(\d{1,3})\s*e(\d{1,3})|(\d{1,3})x(\d{1,3}))\b", cleaned)
+    if episode:
+        season, number = episode.groups()[:2] if episode[1] else episode.groups()[2:]
+        return (int(season), int(number)) == (result["season"], result["episode"])
+    # POV resolves the requested episode within a matching single-season pack.
+    pack = re.search(r"\bs(\d{1,3})\b", cleaned)
+    return bool(pack and int(pack[1]) == result["season"])
+
+
+def select_source(rpc, result, resolution, sleep):
+    keys = {"name": "ListItem.Property(tikiskins.name)",
+            "title": "Window.Property(tikiskins.title)",
+            "quality": "ListItem.Property(tikiskins.quality)",
+            "index": "ListItem.Property(tikiskins.count)",
+            "total": "Window.Property(tikiskins.total_results)"}
+
     def current():
-        labels = rpc("XBMC.GetInfoLabels", {"labels": [name_key, title_key]})
-        if normalize(labels.get(title_key, "")) != normalize(title):
-            return ""
-        return labels.get(name_key, "")
+        labels = rpc("XBMC.GetInfoLabels", {"labels": list(keys.values())})
+        return {key: labels.get(label, "") for key, label in keys.items()}
+
     for _ in range(60):
-        name = current()
-        if name:
+        item = current()
+        if normalize(item["title"]) == normalize(result["title"]) and item["name"]:
             break
         sleep(0.5)
     else:
-        return False
-    seen = set()
-    for _ in range(50):
-        if not name or name in seen:
-            return False
-        seen.add(name)
-        if source_movie_year(name, title) == year:
-            return rpc("Input.Select", {}) == "OK"
+        return {"status": "needs_source_selection"}
+    try:
+        total = int(item["total"])
+    except (TypeError, ValueError):
+        return {"status": "needs_source_selection"}
+    # Never claim highest quality after only inspecting a truncated source list.
+    if not 1 <= total <= 1000:
+        return {"status": "needs_source_selection"}
+    seen, candidates = set(), []
+    rank = {"SD": 0, "720p": 1, "1080p": 2, "2160p": 3}
+    for offset in range(min(total, 50)):
+        if (normalize(item["title"]) != normalize(result["title"])
+                or not item["index"] or item["index"] in seen):
+            return {"status": "needs_source_selection"}
+        seen.add(item["index"])
+        quality = source_resolution(item["quality"]) or source_resolution(item["name"])
+        if source_matches(item["name"], result):
+            if quality is None and resolution == "highest":
+                return {"status": "needs_source_selection"}
+            if quality and (resolution == "highest" or quality == resolution):
+                # An exact request or the highest supported tier needs no further scan.
+                if resolution != "highest" or quality == "2160p":
+                    if rpc("Input.Select", {}) == "OK":
+                        return {"status": "selected", "selected_resolution": quality}
+                    return {"status": "needs_source_selection"}
+                candidates.append((rank[quality], offset, dict(item), quality))
+        if offset < total - 1:
+            rpc("Input.Down", {})
+            sleep(0.1)
+            item = current()
+    if total > 50:
+        return {"status": "needs_source_selection"}
+    if not candidates:
+        return {"status": "resolution_unavailable" if resolution != "highest" else "needs_source_selection"}
+    # Keep POV's ordering as the tie-breaker within the highest quality.
+    chosen = max(candidates, key=lambda candidate: candidate[0])
+    _, offset, expected, quality = chosen
+    for _ in range((offset - (total - 1)) % total):
         rpc("Input.Down", {})
         sleep(0.1)
-        name = current()
+    item = current()
+    if item != expected:
+        return {"status": "needs_source_selection"}
+    if rpc("Input.Select", {}) != "OK":
+        return {"status": "needs_source_selection"}
+    return {"status": "selected", "selected_resolution": quality}
+
+
+
+def select_track_action(rpc, playerid, kind, index, count, sleep):
+    """Work around Kodi 21 returning a video session with its music playlist ID."""
+    current = "currentaudiostream" if kind == "audio" else "currentsubtitle"
+    properties = [current] + (["subtitleenabled"] if kind == "subtitles" else [])
+    for _ in range(min(count + 2, 34)):
+        active = rpc("Player.GetActivePlayers", {})
+        videos = [p for p in active if p.get("type") == "video"]
+        if len(videos) != 1 or videos[0]["playerid"] != playerid:
+            return False
+        state = rpc("Player.GetProperties", {"playerid": playerid, "properties": properties})
+        enabled = state.get("subtitleenabled") is True
+        if (state.get(current) or {}).get("index") == index and (kind == "audio" or enabled):
+            return True
+        action = "audionextlanguage" if kind == "audio" else ("nextsubtitle" if enabled else "showsubtitles")
+        if rpc("Input.ExecuteAction", {"action": action}) != "OK":
+            return False
+        sleep(0.25)
     return False
+
+
+def prefer_english(rpc, playerid, sleep=time.sleep):
+    """Select the first English tracks on the verified player, without changing defaults."""
+    properties = ["type", "audiostreams", "subtitles", "currentaudiostream", "currentsubtitle", "subtitleenabled"]
+    try:
+        tracks = rpc("Player.GetProperties", {"playerid": playerid, "properties": properties})
+    except (OSError, ValueError, RuntimeError):
+        return {"audio": "unverified", "subtitles": "unverified"}
+    outcome = {}
+    for kind, key, current, method, argument in [
+            ("audio", "audiostreams", "currentaudiostream", "Player.SetAudioStream", "stream"),
+            ("subtitles", "subtitles", "currentsubtitle", "Player.SetSubtitle", "subtitle")]:
+        candidates = [track for track in tracks.get(key, [])
+                      if type(track.get("index")) is int and track["index"] >= 0
+                      and str(track.get("language", "")).lower().replace("_", "-").split("-")[0]
+                      in {"en", "eng", "english"}]
+        if not candidates:
+            outcome[kind] = "not_available"
+            continue
+        index = min(track["index"] for track in candidates)
+        try:
+            # GetActivePlayers can report video/0 while GetProperties(0) reports audio.
+            # Kodi's video-only SetAudioStream/SetSubtitle reject that playlist ID.
+            if tracks.get("type") == "audio":
+                confirmed = select_track_action(rpc, playerid, kind, index, len(tracks.get(key, [])), sleep)
+                outcome[kind] = "selected" if confirmed else "unverified"
+                continue
+            if ((tracks.get(current) or {}).get("index") != index
+                    or (kind == "subtitles" and not tracks.get("subtitleenabled"))):
+                params = {"playerid": playerid, argument: index}
+                if kind == "subtitles":
+                    params["enable"] = True
+                if rpc(method, params) != "OK":
+                    outcome[kind] = "unverified"
+                    continue
+            after = rpc("Player.GetProperties", {"playerid": playerid,
+                        "properties": [current] + (["subtitleenabled"] if kind == "subtitles" else [])})
+            confirmed = (after.get(current) or {}).get("index") == index
+            if kind == "subtitles":
+                confirmed = confirmed and after.get("subtitleenabled") is True
+            outcome[kind] = "selected" if confirmed else "unverified"
+        except (OSError, ValueError, RuntimeError):
+            outcome[kind] = "unverified"
+    return outcome
 
 
 def perform(rpc, request, sleep=time.sleep):
     if request.get("operation") not in {"search", "resolve", "play"}:
         return {"status": "failed", "message": "Unsupported operation.", "command_sent": False}
+    resolution = resolution_value(request.get("resolution"))
+    if resolution is None:
+        return {"status": "invalid_resolution", "command_sent": False,
+                "message": "Use highest, 2160p/4K, 1080p, 720p or SD. Nothing was played."}
     result = resolve(rpc, request)
     path = result.pop("file", None)
     if result["status"] != "resolved" or request["operation"] != "play":
@@ -196,42 +332,49 @@ def perform(rpc, request, sleep=time.sleep):
         else:
             return {**result, "status": "failed", "command_sent": False,
                     "message": "Kodi did not finish stopping the previous video. The new title was not opened."}
-    # Series use native autoplay. Movies require a title/year-checked source.
+    # Inspect quality and identity before selecting a movie or episode source.
     parsed = urlsplit(path)
     params = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "autoplay"]
-    path = urlunsplit(parsed._replace(query=urlencode(params + [("autoplay", "false" if result["media_type"] == "movie" else "true")])))
+    path = urlunsplit(parsed._replace(query=urlencode(params + [("autoplay", "false")])))
     if rpc("Player.Open", {"item": {"file": path}}) != "OK":
         return {**result, "status": "failed", "message": "Kodi did not accept the playback request."}
     result.update(status="playback_requested", command_sent=True, playback_verified=False,
+                  requested_resolution=resolution,
+                  english_tracks={"audio": "not_applied", "subtitles": "not_applied"},
                   message="POV accepted the playback request. It may still be finding sources or waiting for source selection; playback is not verified.")
-    if result["media_type"] == "movie":
-        try:
-            selected = select_movie_source(rpc, result["title"], result["year"], sleep)
-        except (OSError, ValueError, RuntimeError):
-            selected = False
-        result["source_selection_verified"] = selected
-        if not selected:
-            return {**result, "status": "needs_source_selection",
-                    "message": "Could not select a source with a matching title and release year. Playback is not verified; manual source selection may be needed. Do not retry automatically."}
-    sleep(3)
     try:
-        active = rpc("Player.GetActivePlayers", {})
-        video = next((p for p in active if p.get("type") == "video"), None)
-        if video:
-            playing = rpc("Player.GetItem", {"playerid": video["playerid"],
-                          "properties": ["title", "showtitle", "season", "episode", "year"]}).get("item", {})
-            title = playing.get("showtitle") if result["media_type"] == "series" else playing.get("title")
-            matched = normalize(title or "") == normalize(result["title"])
-            if result["media_type"] == "series":
-                matched = matched and playing.get("season") == result["season"] and playing.get("episode") == result["episode"]
-            else:
-                matched = matched and bool(result.get("year")) and playing.get("year") == result["year"]
-            if matched:
-                result.update(status="playback_confirmed", playback_verified=True,
-                              message="Kodi reports the requested title/episode in its active video player.")
+        selection = select_source(rpc, result, resolution, sleep)
     except (OSError, ValueError, RuntimeError):
-        # Do not turn a failed post-check into a second playback attempt.
-        pass
+        selection = {"status": "needs_source_selection"}
+    result["source_selection_verified"] = selection["status"] == "selected"
+    if not result["source_selection_verified"]:
+        return {**result, "status": selection["status"],
+                "message": "No source was selected. The requested resolution and title/year or episode could not be confirmed within the offered source list. Do not substitute a resolution or retry automatically; manual source selection may be needed."}
+    result["selected_resolution"] = selection["selected_resolution"]
+    sleep(3)
+    for attempt in range(10):
+        try:
+            active = rpc("Player.GetActivePlayers", {})
+            video = next((p for p in active if p.get("type") == "video"), None)
+            if video:
+                playing = rpc("Player.GetItem", {"playerid": video["playerid"],
+                              "properties": ["title", "showtitle", "season", "episode", "year"]}).get("item", {})
+                title = playing.get("showtitle") if result["media_type"] == "series" else playing.get("title")
+                matched = normalize(title or "") == normalize(result["title"])
+                if result["media_type"] == "series":
+                    matched = matched and playing.get("season") == result["season"] and playing.get("episode") == result["episode"]
+                else:
+                    matched = matched and bool(result.get("year")) and playing.get("year") == result["year"]
+                if matched:
+                    result.update(status="playback_confirmed", playback_verified=True,
+                                  message="Kodi reports the requested title/episode in its active video player.")
+                    result["english_tracks"] = prefer_english(rpc, video["playerid"], sleep)
+                    break
+        except (OSError, ValueError, RuntimeError):
+            # Do not turn a failed post-check into a second playback attempt.
+            break
+        if attempt < 9:
+            sleep(1)
     return result
 
 

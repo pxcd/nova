@@ -640,7 +640,9 @@ play_kodi_pov:
   alias: Play a movie or episode through Kodi POV
   description: Play a named movie or a specific series episode using POV, the default
     Kodi movie/series add-on. For series require explicit season and episode; do not
-    guess latest season or resume. Optional year disambiguates remakes. Use catalog
+    guess latest season or resume. Optional resolution is exact (2160p/4K, 1080p,
+    720p or SD); omitted/highest selects the highest offered matching source. Never
+    substitute a different resolution when explicitly requested. Optional year disambiguates remakes. Use catalog
     candidates for one canonical-title retry after a speech error. Only say playback
     confirmed when playback_verified=true; otherwise say request sent or source selection
     may be needed. Does not handle sports or The Loop.
@@ -662,6 +664,13 @@ play_kodi_pov:
           options:
           - movie
           - series
+    resolution:
+      name: Resolution
+      description: Exact requested quality, or highest when omitted. Map 4K to 2160p. Do not put resolution in query.
+      default: highest
+      selector:
+        select:
+          options: [highest, 2160p, 1080p, 720p, SD]
     year:
       description: Optional release year for ambiguous titles.
       selector:
@@ -693,6 +702,7 @@ play_kodi_pov:
         operation: play
         query: '{{ query }}'
         media_type: '{{ media_type }}'
+        resolution: '{{ resolution | default(none) }}'
         year: '{{ year | default(none) }}'
         season: '{{ season | default(none) }}'
         episode: '{{ episode | default(none) }}'
