@@ -1,0 +1,904 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "assist_satellite__HassBroadcast",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "homeassistant__GetLiveContext",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Filter entities by name or alias (case-insensitive)."
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Filter entities by domain (e.g. 'light', 'sensor'). Accepts a single domain or a list."
+          },
+          "area": {
+            "type": "string",
+            "description": "Filter entities by area name or alias (case-insensitive)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "intent__HassCancelAllTimers",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "area": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "intent__HassTurnOff",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "identify",
+                "restart",
+                "update",
+                "awning",
+                "blind",
+                "curtain",
+                "damper",
+                "door",
+                "garage",
+                "gate",
+                "shade",
+                "shutter",
+                "window",
+                "tv",
+                "speaker",
+                "receiver",
+                "projector",
+                "outlet",
+                "switch",
+                "water",
+                "gas"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "intent__HassTurnOn",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "identify",
+                "restart",
+                "update",
+                "awning",
+                "blind",
+                "curtain",
+                "damper",
+                "door",
+                "garage",
+                "gate",
+                "shade",
+                "shutter",
+                "window",
+                "tv",
+                "speaker",
+                "receiver",
+                "projector",
+                "outlet",
+                "switch",
+                "water",
+                "gas"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "llm__GetDateTime",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassMediaNext",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "media_player"
+              ]
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tv",
+                "speaker",
+                "receiver",
+                "projector"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassMediaPause",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "media_player"
+              ]
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tv",
+                "speaker",
+                "receiver",
+                "projector"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassMediaPlayerMute",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "media_player"
+              ]
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tv",
+                "speaker",
+                "receiver",
+                "projector"
+              ]
+            }
+          },
+          "is_volume_muted": {
+            "description": "Whether the media player should be muted or unmuted"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassMediaPlayerUnmute",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "media_player"
+              ]
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tv",
+                "speaker",
+                "receiver",
+                "projector"
+              ]
+            }
+          },
+          "is_volume_muted": {
+            "description": "Whether the media player should be muted or unmuted"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassMediaPrevious",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "media_player"
+              ]
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tv",
+                "speaker",
+                "receiver",
+                "projector"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassMediaUnpause",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "media_player"
+              ]
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tv",
+                "speaker",
+                "receiver",
+                "projector"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassSetVolume",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "media_player"
+              ]
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tv",
+                "speaker",
+                "receiver",
+                "projector"
+              ]
+            }
+          },
+          "volume_level": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "The volume percentage of the media player"
+          }
+        },
+        "required": [
+          "volume_level"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_player__HassSetVolumeRelative",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "volume_step": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              {
+                "type": "integer",
+                "minimum": -100,
+                "maximum": 100
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "volume_step"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__confirm_hbo_selection",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__confirm_prime_video_selection",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__launch_apple_tv_living_room",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__launch_hbo_max_living_room",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__launch_netflix_living_room",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__launch_prime_video_living_room",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__play_apple_tv_title",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Canonical movie or show title only. Correct obviou... <Truncated in logs> ...anonical title, retry once using that exact title."
+          },
+          "start_playback": {
+            "type": "boolean",
+            "description": "True for play/watch/resume; false for opening title details only."
+          },
+          "year": {
+            "type": "number",
+            "minimum": 1880,
+            "maximum": 2200,
+            "description": "Optional numeric movie release year or series first-air year."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__play_hbo_title",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Canonical movie or show title only. Correct obviou... <Truncated in logs> ...anonical title, retry once using that exact title."
+          },
+          "start_playback": {
+            "type": "boolean",
+            "description": "True for play/watch/resume; false for opening title details only."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__play_kodi_pov",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Canonical movie or series title only. Correct obvious speech errors using catalog suggestions."
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "series"
+            ],
+            "description": "movie or series; POV is the default Kodi add-on for both."
+          },
+          "year": {
+            "type": "number",
+            "minimum": 1880,
+            "maximum": 2200,
+            "description": "Optional release year for ambiguous titles."
+          },
+          "season": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Explicit season number for a series; required for series playback."
+          },
+          "episode": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Explicit episode number for a series; required for series playback."
+          }
+        },
+        "required": [
+          "query",
+          "media_type"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__play_netflix_title",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Canonical movie or show title only. Correct obviou... <Truncated in logs> ...anonical title, retry once using that exact title."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__play_prime_video_title",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Canonical movie or show title only. Correct obviou... <Truncated in logs> ...anonical title, retry once using that exact title."
+          },
+          "start_playback": {
+            "type": "boolean",
+            "description": "True for play/watch/resume; false for opening title details only."
+          },
+          "year": {
+            "type": "number",
+            "minimum": 1880,
+            "maximum": 2200,
+            "description": "Optional numeric movie release year or series first-air year."
+          },
+          "select_profile": {
+            "type": "boolean",
+            "description": "True for this Sony, which shows its already-highli... <Truncated in logs> ...False only when profile selection is not required."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__search_kodi_pov",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Canonical movie or series title only. Correct obvious speech errors using catalog suggestions."
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "series"
+            ],
+            "description": "movie or series; POV is the default Kodi add-on for both."
+          }
+        },
+        "required": [
+          "query",
+          "media_type"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__select_netflix_paolo_profile",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "script__tv_go_home",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "todo__HassListAddItem",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "todo__HassListCompleteItem",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "todo__HassListRemoveItem",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "todo__get_items",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "todo_list": {
+            "type": "string",
+            "enum": [
+              "Shopping list"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "needs_action",
+              "completed",
+              "all"
+            ],
+            "description": "Filter returned items by status, by default returns incomplete items",
+            "default": "needs_action"
+          }
+        },
+        "required": [
+          "todo_list"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+]

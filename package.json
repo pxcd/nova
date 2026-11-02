@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "NOVA Operates Voice Automations — a private Home Assistant voice client",
-  "engines": { "node": ">=22" },
+  "description": "NOVA Operates Voice Automations \u2014 a private Home Assistant voice client",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "setup:https": "node scripts/setup-https.js"
+    "setup:https": "node scripts/setup-https.js",
+    "fm:bridge": "node scripts/fm-bridge.js"
   }
 }

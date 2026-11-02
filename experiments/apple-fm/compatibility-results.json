@@ -1,0 +1,16 @@
+{
+  "original_all_ha_tools_status": 400,
+  "script_only_status": 200,
+  "unsupported_fields": [
+    "homeassistant__GetLiveContext.domain:anyOf",
+    "media_player__HassSetVolumeRelative.volume_step:anyOf",
+    "media_player__HassMediaPlayerMute.is_volume_muted:missing_type",
+    "media_player__HassMediaPlayerUnmute.is_volume_muted:missing_type"
+  ],
+  "adapted_all_32_tools_status": 200,
+  "actual_ha_conversation_status": 200,
+  "actual_ha_conversation_reply": "Hello! How’s it going?",
+  "actual_ha_elapsed_seconds": 12.823,
+  "device_actions_tested": false,
+  "production_provider_changed": false
+}

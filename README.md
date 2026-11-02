@@ -45,3 +45,17 @@ No service worker caches authenticated responses or audio. Nothing depends on a 
 `home-assistant/` contains the NOVA-owned HA scripts, secret-referencing catalog requests, shell bridge configuration and current agent instructions, with restore notes. Provider-specific code/tests are under `integrations/`. Netflix, HBO Max, Kodi POV, Apple TV+ and Prime Video have been tested on the Sony; The Loop and Apple Music are postponed.
 
 Keep `.env`, `.local/`, populated HA `secrets.yaml`, and ADB pairing keys outside version control. Generate local TLS certificates on each installation. This repository is source/configuration, not a replacement for a separately protected Home Assistant backup.
+
+## Experimental Apple Foundation Models
+
+The separate **Apple FM — Experimental** HA pipeline uses Apple’s `system` model. GPT-OSS remains NOVA’s configured provider. Start Apple’s server, then the compatibility bridge in another terminal:
+
+```sh
+fm serve --host 172.16.152.1 --port 1976
+# Separate terminal, inside this repository:
+FM_BRIDGE_HOST=172.16.152.1 FM_UPSTREAM=http://172.16.152.1:1976 npm run fm:bridge
+```
+
+HA connects to `http://172.16.152.1:1977/v1`. Port 1977 is the bridge, port 1976 is Apple’s server. These addresses are on this Mac’s VM network. For a different network, explicitly configure the bindings and endpoints; this bridge is intended for the trusted local VM network and adds no authentication layer.
+
+The bridge preserves messages, tool names, responses and streaming, but converts four incompatible HA tool schemas: live-context domains become arrays, relative volume changes become signed integers, and mute/unmute flags get boolean types. HA already accepts those representations. Unknown union/untyped schemas return an explicit compatibility error instead of being dropped. See `experiments/apple-fm/` for observations and limitations.

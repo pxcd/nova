@@ -1,7 +1,7 @@
 {
   "experimental": true,
   "server_name": "Apple FM — Experimental",
-  "base_url": "http://172.16.152.1:1976/v1",
+  "base_url": "http://172.16.152.1:1977/v1",
   "api_key_required": false,
   "model": "system",
   "parallel_tool_calls": false,
@@ -13,5 +13,8 @@
   "agent_entity_id": "conversation.apple_fm_experimental_system_ai_agent",
   "pipeline_id": "01m6dfdd80np5qd8fnxzwdj379",
   "start_command": "fm serve --host 172.16.152.1 --port 1976",
-  "default_provider_changed": false
+  "default_provider_changed": false,
+  "upstream_base_url": "http://172.16.152.1:1976/v1",
+  "bridge_start_command": "FM_BRIDGE_HOST=172.16.152.1 FM_UPSTREAM=http://172.16.152.1:1976 npm run fm:bridge",
+  "compatibility_note": "Apple fm serve rejects HA union schemas and untyped boolean fields. The bridge narrows four known tools to HA-valid types; unknown unsupported schemas fail rather than being silently modified."
 }

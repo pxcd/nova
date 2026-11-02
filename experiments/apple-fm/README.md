@@ -7,3 +7,11 @@ Nine nonexecuting cases passed: spoken year, explicit year, original-version fol
 `results.json` records the outputs and limitations. No TV actions occurred during these tests. The complete HA Assist tool bundle and real device control still need a live test. Apple FM is not established as a drop-in quality or latency improvement over GPT-OSS.
 
 Start the server with `fm serve --host 172.16.152.1 --port 1976`. This binds the homelab's VM network address; HA reaches `/v1`. The observed health response marked the on-device `system` model available and `pcc` unavailable in that server context. In HA Assist, select the experimental pipeline to test it; NOVA's webapp continues using the pipeline configured in `.env`. The server must remain running. See `../../home-assistant/apple-fm.experimental.json` and `pipelines.json` for reference settings; these are not automatically imported by HA.
+
+## Live HA schema compatibility fix
+
+The first live HA attempt returned HTTP 400 from `fm serve`: it cannot decode the `anyOf` schemas in `homeassistant__GetLiveContext.domain` and `media_player__HassSetVolumeRelative.volume_step`, or the untyped `is_volume_muted` fields in the mute/unmute tools. Direct tests reproduced rejection of all four; the script-only tool bundle succeeded.
+
+`fm-schema.js` narrows those known fields to array, signed integer and boolean types that HA accepts. `scripts/fm-bridge.js` forwards the resulting OpenAI request and streams responses unchanged. The full 32-tool payload then succeeded. A real HA conversation with all tools enabled also succeeded (one observed greeting request took 12.8 seconds end to end; this is not TTFT or a performance benchmark). Actual device-tool playback through Apple FM remains unverified.
+
+The experimental HA endpoint is now the bridge at `http://172.16.152.1:1977/v1`; Apple’s server remains on port 1976. See the root README for startup commands. Neither GPT-OSS nor NOVA’s default pipeline was changed. The fixture under `test/fixtures/ha-tool-schemas.json` captures the actual parameter structures used in the diagnostic; descriptions are omitted there because unit tests concern schema conversion.
