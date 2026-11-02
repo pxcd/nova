@@ -1,0 +1,17 @@
+{
+  "jdk": {
+    "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.21_9.tar.gz",
+    "sha256": "78b08c7f5a0598242d5719c022e19479cb4a3aa45c37c19726a757a469ed1c15",
+    "size": 186192554,
+    "name": "OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.21_9.tar.gz"
+  },
+  "sdk": {
+    "url": "https://dl.google.com/android/repository/platform-31_r01.zip",
+    "size": 56475526,
+    "sha1": "ca5bcaa565cb37e9d287051d6dd0e49a5426ec29"
+  },
+  "r8": {
+    "url": "https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.3.37/r8-8.3.37.jar",
+    "sha1": "6b023243a76124fb055d66b50e2e11db9b4d9b2b"
+  }
+}
