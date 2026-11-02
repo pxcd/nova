@@ -9,7 +9,10 @@ play_netflix_title:
     Returns to Google TV home before sending the title link so Netflix handles it
     when already open. Set from_start=true only for explicit restart/from-the-beginning
     requests. Selects the freshly opened title page restart option before idle autoplay,
-    without Back; expects the desired profile already selected.'
+    without Back; expects the desired profile already selected. For a specific series
+    episode, pass both positive numeric season and episode. Resolves the episode-level
+    Netflix PH link; never substitutes the series resume link when an episode is missing
+    or unavailable. Keep these numbers out of query.'
   mode: single
   fields:
     query:
@@ -27,10 +30,57 @@ play_netflix_title:
       default: false
       selector:
         boolean: {}
+    season:
+      name: Season
+      description: Explicit season number. Supply both season and episode only when
+        the user asks for a specific episode.
+      selector:
+        number:
+          min: 1
+          max: 999
+          step: 1
+          mode: box
+    episode:
+      name: Episode
+      description: Explicit episode number. Supply both season and episode only when
+        the user asks for a specific episode.
+      selector:
+        number:
+          min: 1
+          max: 999
+          step: 1
+          mode: box
   sequence:
+  - if: '{{ season is defined or episode is defined }}'
+    then:
+    - if: '{{ season is not defined or episode is not defined }}'
+      then:
+      - variables:
+          episode_result:
+            status: needs_episode
+            command_sent: false
+            message: Provide both the season and episode numbers; no TV command was
+              sent.
+      - stop: Provide both the season and episode numbers; no TV command was sent.
+        response_variable: episode_result
+    - if: '{{ season is not number or season is boolean or episode is not number or
+        episode is boolean or season | int != season or episode | int != episode or
+        season < 1 or episode < 1 or season > 999 or episode > 999 }}'
+      then:
+      - variables:
+          episode_result:
+            status: invalid_episode
+            command_sent: false
+            message: Season and episode must be whole numbers from 1 to 999; no TV
+              command was sent.
+      - stop: Season and episode must be whole numbers from 1 to 999; no TV command
+          was sent.
+        response_variable: episode_result
   - action: rest_command.netflix_title_search
     data:
       query: '{{ query | trim }}'
+      series_granularity: '{{ ''episode'' if season is defined and episode is defined
+        else ''show'' }}'
     response_variable: search_response
   - if: '{{ search_response.status != 200 or search_response.content is not sequence
       or search_response.content is string or search_response.content is mapping }}'
@@ -45,12 +95,51 @@ play_netflix_title:
     - stop: Title lookup failed.
       response_variable: failure_result
   - variables:
-      matches: "{% set wanted = query | lower | regex_replace('[^a-z0-9]', '') %}\
-        \ {% set ns = namespace(found=[]) %} {% for item in search_response.content\
-        \ %}\n  {% set title = item.get('title', '') | lower | regex_replace('[^a-z0-9]',\
-        \ '') %}\n  {% set original = item.get('originalTitle', '') | lower | regex_replace('[^a-z0-9]',\
-        \ '') %}\n  {% if wanted and wanted in [title, original] %}\n    {% set ns.found\
-        \ = ns.found + [item] %}\n  {% endif %}\n{% endfor %} {{ ns.found }}"
+      matches: '{% set wanted = query | lower | regex_replace(''[^a-z0-9]'', '''')
+        %}
+
+        {% set ns = namespace(found=[]) %}
+
+        {% for item in search_response.content %}
+
+        {% set title = item.get(''title'', '''') | lower | regex_replace(''[^a-z0-9]'',
+        '''') %}
+
+        {% set original = item.get(''originalTitle'', '''') | lower | regex_replace(''[^a-z0-9]'',
+        '''') %}
+
+        {% if wanted and wanted in [title, original] %}
+
+        {% set selected = namespace(seasons=[]) %}
+
+        {% if season is defined %}
+
+        {% for part in item.get(''seasons'', []) %}
+
+        {% if part.get(''title'', '''') | lower | trim == ''season '' ~ (season |
+        int) %}
+
+        {% set entries = namespace(episodes=[]) %}
+
+        {% for entry in part.get(''episodes'', []) %}
+
+        {% set entries.episodes = entries.episodes + [dict(title=entry.get(''title'',
+        ''''), streamingOptions=dict(ph=entry.get(''streamingOptions'', {}).get(''ph'',
+        [])))] %}
+
+        {% endfor %}
+
+        {% set selected.seasons = selected.seasons + [dict(title=part.get(''title''),
+        episodes=entries.episodes)] %}
+
+        {% endif %}{% endfor %}{% endif %}
+
+        {% set ns.found = ns.found + [dict(title=item.get(''title''), showType=item.get(''showType''),
+        releaseYear=item.get(''releaseYear''), firstAirYear=item.get(''firstAirYear''),
+        streamingOptions=dict(ph=item.get(''streamingOptions'', {}).get(''ph'', [])),
+        seasons=selected.seasons)] %}
+
+        {% endif %}{% endfor %}{{ ns.found }}'
   - variables:
       eligible_matches: "{% set ns = namespace(found=[]) %}\n{% for item in matches\
         \ %}\n  {% set available = namespace(value=false) %}\n  {% for option in item.get('streamingOptions',\
@@ -87,12 +176,67 @@ play_netflix_title:
     - stop: Title needs clarification.
       response_variable: clarification_result
   - variables:
-      netflix_ids: "{% set ns = namespace(ids=[]) %} {% for option in matches[0].get('streamingOptions',\
-        \ {}).get('ph', []) %}\n  {% if option.get('service', {}).get('id') == 'netflix'\
-        \ and option.get('type') == 'subscription' %}\n    {% set ids = option.get('link',\
-        \ '') | regex_findall('^https://www[.]netflix[.]com/title/([0-9]{6,8})/?$')\
-        \ %}\n    {% set ns.ids = ns.ids + ids %}\n  {% endif %}\n{% endfor %} {{\
-        \ ns.ids | unique | list }}"
+      selected_item: '{{ matches[0] }}'
+  - if: '{{ season is defined and episode is defined }}'
+    then:
+    - if: '{{ matches[0].get(''showType'') != ''series'' }}'
+      then:
+      - variables:
+          episode_result:
+            status: invalid_episode
+            command_sent: false
+            message: The matched title is a movie, not a series; no TV command was
+              sent.
+      - stop: The matched title is a movie, not a series; no TV command was sent.
+        response_variable: episode_result
+    - variables:
+        season_matches: '{% set ns = namespace(found=[]) %}{% for item in matches[0].get(''seasons'',
+          []) %}{% if item.get(''title'', '''') | lower | trim == ''season '' ~ (season
+          | int) %}{% set ns.found = ns.found + [item] %}{% endif %}{% endfor %}{{
+          ns.found }}'
+    - if: '{{ season_matches | count != 1 }}'
+      then:
+      - variables:
+          episode_result:
+            status: unavailable
+            command_sent: false
+            message: The requested numbered season was not uniquely present in the
+              catalog. No TV command was sent; do not substitute a different season
+              or resume the series.
+      - stop: The requested numbered season was not uniquely present in the catalog.
+          No TV command was sent; do not substitute a different season or resume the
+          series.
+        response_variable: episode_result
+    - variables:
+        episode_items: '{{ season_matches[0].get(''episodes'', []) }}'
+    - if: '{{ episode | int > episode_items | count }}'
+      then:
+      - variables:
+          episode_result:
+            status: unavailable
+            command_sent: false
+            message: The requested episode was not present in the catalog. No TV command
+              was sent; do not substitute another episode or resume the series.
+      - stop: The requested episode was not present in the catalog. No TV command
+          was sent; do not substitute another episode or resume the series.
+        response_variable: episode_result
+    - variables:
+        selected_item: '{{ episode_items[(episode | int) - 1] }}'
+  - variables:
+      netflix_ids: '{% set ns = namespace(ids=[]) %}
+
+        {% for option in selected_item.get(''streamingOptions'', {}).get(''ph'', [])
+        %}
+
+        {% if option.get(''service'', {}).get(''id'') == ''netflix'' and option.get(''type'')
+        == ''subscription'' %}
+
+        {% set ids = option.get(''videoLink'', option.get(''link'', '''')) | regex_findall(''^https://www[.]netflix[.]com/(?:title|watch)/([0-9]{6,10})/?$'')
+        %}
+
+        {% set ns.ids = ns.ids + ids %}
+
+        {% endif %}{% endfor %}{{ ns.ids | unique | list }}'
   - if: '{{ netflix_ids | count != 1 }}'
     then:
     - variables:
@@ -116,7 +260,8 @@ play_netflix_title:
       entity_id: media_player.sony_xr_55x90l_2
     data:
       media_content_type: url
-      media_content_id: https://www.netflix.com/title/{{ netflix_ids[0] }}?source=30
+      media_content_id: https://www.netflix.com/{{ 'watch' if season is defined and
+        episode is defined else 'title' }}/{{ netflix_ids[0] }}?source=30
   - if: '{{ from_start | default(false) }}'
     then:
     - delay: 00:00:02
@@ -133,6 +278,10 @@ play_netflix_title:
           playback_verified: false
           restart_verified: false
           message: '{{ restart_outcome.message }}'
+          season: '{{ season | int if season is defined else none }}'
+          episode: '{{ episode | int if episode is defined else none }}'
+          episode_title: '{{ selected_item.get(''title'') if season is defined and
+            episode is defined else none }}'
     - stop: Netflix start-over request finished.
       response_variable: restart_response
   - variables:
@@ -144,6 +293,10 @@ play_netflix_title:
         command_sent: true
         playback_verified: false
         message: Netflix title link sent. Playback and profile selection are not verified.
+        season: '{{ season | int if season is defined else none }}'
+        episode: '{{ episode | int if episode is defined else none }}'
+        episode_title: '{{ selected_item.get(''title'') if season is defined and episode
+          is defined else none }}'
   - stop: Netflix title link sent.
     response_variable: launch_result
 netflix_restart_from_playback:

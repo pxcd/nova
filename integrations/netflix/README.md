@@ -1,4 +1,33 @@
-# Netflix restart option
+# Netflix title and episode playback
+
+`script.play_netflix_title` accepts `query`, optional `season` and `episode`, and
+`from_start` (default false). For example: “Play Brooklyn Nine-Nine season 1,
+episode 2 on Netflix.” Keep the series title in `query`; supply both numbers as
+positive integers. Requests without episode numbers retain normal Netflix resume.
+
+Explicit episodes request `series_granularity=episode` from the existing Streaming
+Availability API. The selector matches a unique `Season N` label, selects that
+season's episode by its position in the catalog, and validates the episode's PH
+Netflix subscription link. It launches the episode `/watch/<id>?source=30` link,
+using the existing Home → link sequence. No season-menu key navigation is needed.
+Missing numbers, unsupported season labels, out-of-range episodes, movies with
+episode arguments, and absent episode links return an error without TV commands.
+There is no fallback to a series resume link. Catalog projection excludes plots,
+artwork, other countries, and unrequested seasons to stay below HA template limits.
+
+2026-11-02 live check: Brooklyn Nine-Nine S1E2 resolved to “The Tagger”, Netflix ID
+`80004162`; Paolo confirmed the Sony opened the correct episode. Other series and
+catalog numbering conventions remain unverified. Netflix supplies no useful title
+metadata through its media session, so the tool reports the command and resolved
+episode, not independently verified playback. Profile selection remains an
+assumption. GPT-OSS was also checked with nonexecuting tool calls: explicit S1E2
+included both numbers; ordinary resume omitted them.
+
+`test_episodes.py` runs inside the HA Python environment with mocked services. It
+checks episode links, input validation, missing availability, reordered seasons,
+oversized catalog data, default resume, and preservation of explicit restart.
+
+# Restart option
 
 `script.play_netflix_title` adds a default-off boolean `from_start`. Normal playback sends the same catalog-selected title link as before. For restart, the script waits two seconds, then its hidden helper selects the row below Resume directly on the freshly opened title page, before idle autoplay/resume. It never presses Back.
 

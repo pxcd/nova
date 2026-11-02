@@ -1,5 +1,5 @@
 netflix_title_search:
-  url: "https://api.movieofthenight.com/v4/shows/search/title?title={{ query | urlencode }}&country=ph"
+  url: "https://api.movieofthenight.com/v4/shows/search/title?title={{ query | urlencode }}&country=ph&series_granularity={{ series_granularity | default('show') }}"
   timeout: 25
   headers:
     X-API-Key: !secret streaming_availability_api_key
