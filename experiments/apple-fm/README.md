@@ -1,3 +1,5 @@
+> Retired from live HA on 2026-11-02 at the user’s request. The provider/pipeline were removed and the bridge stopped. The text below is historical test evidence; Qwen3 4B is the replacement trial provider. Former settings are in `retired-provider.json`.
+
 # Apple Foundation Models trial
 
 Tested `fm serve` on macOS 27.2, model `system`, using NOVA's saved instructions and representative OpenAI playback/search tool schemas. The separate HA server and Assist pipeline are named **Apple FM — Experimental**. NOVA remains on GPT-OSS.

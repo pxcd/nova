@@ -56,7 +56,9 @@ play_netflix_title:
     the command was sent, not whether playback actually started. Availability data
     provided by Streaming Availability API by Movie of the Night: https://www.movieofthenight.com/about/api
     Returns to Google TV home before sending the title link so Netflix handles it
-    when already open.'
+    when already open. Set from_start=true only for explicit restart/from-the-beginning
+    requests. Uses the tested Netflix playback menu; expects the desired profile already
+    selected.'
   mode: single
   fields:
     query:
@@ -67,6 +69,13 @@ play_netflix_title:
       required: true
       selector:
         text: null
+    from_start:
+      name: From the beginning
+      description: True only when the user asks from the start/beginning/start over.
+        Restarts the selected movie or current episode, not the whole series.
+      default: false
+      selector:
+        boolean: {}
   sequence:
   - action: rest_command.netflix_title_search
     data:
@@ -157,6 +166,24 @@ play_netflix_title:
     data:
       media_content_type: url
       media_content_id: https://www.netflix.com/title/{{ netflix_ids[0] }}?source=30
+  - if: '{{ from_start | default(false) }}'
+    then:
+    - delay: 00:00:08
+    - action: script.netflix_restart_from_playback
+      response_variable: restart_outcome
+    - variables:
+        restart_response:
+          status: '{{ restart_outcome.status }}'
+          title: '{{ matches[0].title }}'
+          country: PH
+          netflix_id: '{{ netflix_ids[0] }}'
+          command_sent: true
+          from_start: true
+          playback_verified: false
+          restart_verified: false
+          message: '{{ restart_outcome.message }}'
+    - stop: Netflix start-over request finished.
+      response_variable: restart_response
   - variables:
       launch_result:
         status: title_link_sent
@@ -170,12 +197,13 @@ play_netflix_title:
     response_variable: launch_result
 play_hbo_title:
   alias: Play or open a title on HBO Max
-  description: 'Look up a named movie or show on HBO Max in the Philippines. Always
-    use this for HBO, HBO Max, or Max requests naming content. query is only the title.
-    start_playback=true for play/watch/resume; false for open/show details. Uses HBO
-    own default Play/Resume button to follow the selected profile watch progress.
-    Assumes profile already selected; cannot detect profile picker or verify playback.
-    Availability data: Streaming Availability API by Movie of the Night, https://www.movieofthenight.com/about/api'
+  description: 'Find a named title included with HBO Max in PH. query is the canonical
+    title. start_playback=true for play/watch/resume, false for details only. from_start=true
+    selects Restart instead of Resume for the selected movie or current episode. The
+    Sony HBO app is closed and relaunched to establish its profile-picker state; the
+    previously confirmed highlighted profile is selected before title controls. Actual
+    playback position is not verified. Catalog: Streaming Availability API by Movie
+    of the Night.'
   mode: single
   fields:
     query:
@@ -190,6 +218,14 @@ play_hbo_title:
       name: Start playback
       description: True for play/watch/resume; false for opening title details only.
       default: true
+      selector:
+        boolean: {}
+    from_start:
+      name: From the beginning
+      description: True only for from the start/beginning/start over. Selects Restart
+        for the current movie or selected episode; never starts a series at episode
+        one.
+      default: false
       selector:
         boolean: {}
   sequence:
@@ -280,6 +316,24 @@ play_hbo_title:
             was sent.
     - stop: HBO Max PH link unavailable.
       response_variable: unavailable_result
+  - action: androidtv.adb_command
+    continue_on_error: true
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: am force-stop com.wbd.stream && echo NOVA_HBO_STOP_{{ context.id }}
+  - if: '{{ (''NOVA_HBO_STOP_'' ~ context.id) not in (state_attr(''media_player.android_tv_10_0_0_174'',
+      ''adb_response'') | default('''', true)) }}'
+    then:
+    - variables:
+        hbo_startup_failure:
+          status: failed
+          command_sent: true
+          playback_verified: false
+          message: Could not establish a fresh HBO app launch. No title link or selection
+            commands were sent.
+    - stop: HBO cold launch failed.
+      response_variable: hbo_startup_failure
   - action: remote.send_command
     target:
       entity_id: remote.sony_xr_55x90l
@@ -292,25 +346,46 @@ play_hbo_title:
     data:
       media_content_type: url
       media_content_id: '{{ hbo_links[0] }}'
+  - delay: 00:00:08
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: DPAD_CENTER
   - if: '{{ start_playback | default(true) }}'
     then:
-    - delay: 00:00:08
-    - action: remote.send_command
-      target:
-        entity_id: remote.sony_xr_55x90l
-      data:
-        command: DPAD_CENTER
+    - delay: 00:00:05
+    - if: '{{ from_start | default(false) }}'
+      then:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command:
+          - DPAD_RIGHT
+          - DPAD_CENTER
+          delay_secs: 0.4
+      else:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command: DPAD_CENTER
   - variables:
       launch_result:
-        status: '{{ ''playback_requested'' if start_playback | default(true) else
-          ''title_link_sent'' }}'
+        status: '{{ (''restart_requested'' if from_start | default(false) else ''playback_requested'')
+          if start_playback | default(true) else ''title_link_sent'' }}'
         title: '{{ matches[0].title }}'
         country: PH
         title_link: '{{ hbo_links[0] }}'
         command_sent: true
         playback_verified: false
-        message: HBO title link sent; OK pressed only if playback requested. Playback/profile
-          picker cannot be verified.
+        message: Fresh HBO launch and highlighted-profile selection completed. Resume
+          or the adjacent Restart button selected only for playback requests. Actual
+          playback/start position is not verified; no ad-skipping commands sent.
+        from_start: '{{ from_start | default(false) and start_playback | default(true)
+          }}'
+        restart_verified: false
   - stop: HBO Max request sent.
     response_variable: launch_result
 launch_hbo_max_living_room:
@@ -649,7 +724,9 @@ play_prime_video_title:
     title launches: select_profile defaults true and selects the previously confirmed
     highlighted profile, then presses Play once. Set false if profile selection is
     no longer required. Does not skip ads or verify video playback. Catalog: Streaming
-    Availability API by Movie of the Night.'
+    Availability API by Movie of the Night. Set from_start=true only for explicit
+    start-over requests: from the focused Resume button, Up selects the circular-arrow
+    Restart icon, then OK confirms. No ad-skipping commands are sent.'
   mode: single
   fields:
     query:
@@ -679,6 +756,13 @@ play_prime_video_title:
       description: True for this Sony, which shows its already-highlighted desired
         profile on title launches. False only when profile selection is not required.
       default: true
+      selector:
+        boolean: {}
+    from_start:
+      name: From the beginning
+      description: True only for explicit from the start/beginning/start over. Restarts
+        the selected movie or current episode, not the whole series.
+      default: false
       selector:
         boolean: {}
   sequence:
@@ -808,26 +892,40 @@ play_prime_video_title:
   - if: '{{ start_playback | default(true) }}'
     then:
     - delay: 00:00:05
-    - action: remote.send_command
-      target:
-        entity_id: remote.sony_xr_55x90l
-      data:
-        command: DPAD_CENTER
+    - if: '{{ from_start | default(false) }}'
+      then:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command:
+          - DPAD_UP
+          - DPAD_CENTER
+          delay_secs: 0.4
+      else:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command: DPAD_CENTER
   - variables:
       launch_result:
-        status: '{{ ''playback_requested'' if start_playback | default(true) else
-          ''title_link_sent'' }}'
+        status: '{{ (''restart_requested'' if from_start | default(false) else ''playback_requested'')
+          if start_playback | default(true) else ''title_link_sent'' }}'
         title: '{{ matches[0].title }}'
         country: PH
         title_link: '{{ prime_links[0] }}'
         command_sent: true
         playback_verified: false
-        message: Prime title intent delivered to the installed Sony app. Highlighted
-          profile selected if configured; Play pressed only for playback requests.
-          Actual playback and ad completion are not verified. No extra commands were
-          sent to skip ads.
+        message: Prime title intent delivered and highlighted profile selected if
+          configured. Resume or the circular-arrow Restart icon selected only for
+          playback requests. Actual playback/start position is not verified; no ad-skipping
+          commands sent.
         year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
           }}'
+        from_start: '{{ from_start | default(false) and start_playback | default(true)
+          }}'
+        restart_verified: false
   - stop: Prime Video request sent.
     response_variable: launch_result
 launch_prime_video_living_room:
@@ -860,3 +958,55 @@ confirm_prime_video_selection:
         message: One OK sent to the user-confirmed Prime screen; playback is not verified.
   - stop: Prime selection confirmed.
     response_variable: confirmation
+netflix_restart_from_playback:
+  alias: Netflix restart from active playback (internal)
+  description: Internal tested Sony Netflix sequence. Requires active Netflix playback;
+    never use on a profile picker or browsing page.
+  mode: single
+  sequence:
+  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: false
+          restart_verified: false
+          message: Netflix is not the foreground app. No restart command was sent.
+    - stop: Netflix playback required.
+      response_variable: restart_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: BACK
+  - delay: 00:00:01
+  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: true
+          restart_verified: false
+          message: Netflix exited instead of opening the playback title menu. No restart
+            option was selected.
+    - stop: Netflix restart menu unavailable.
+      response_variable: restart_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command:
+      - DPAD_DOWN
+      - DPAD_CENTER
+      delay_secs: 0.4
+  - variables:
+      restart_result:
+        status: restart_requested
+        command_sent: true
+        restart_verified: false
+        message: Selected Netflix Continue from the beginning, one row below Resume.
+          Position is not independently verified.
+  - stop: Netflix restart requested.
+    response_variable: restart_result

@@ -46,16 +46,14 @@ No service worker caches authenticated responses or audio. Nothing depends on a 
 
 Keep `.env`, `.local/`, populated HA `secrets.yaml`, and ADB pairing keys outside version control. Generate local TLS certificates on each installation. This repository is source/configuration, not a replacement for a separately protected Home Assistant backup.
 
-## Experimental Apple Foundation Models
+## Model providers
 
-The separate **Apple FM — Experimental** HA pipeline uses Apple’s `system` model. GPT-OSS remains NOVA’s configured provider. Start Apple’s server, then the compatibility bridge in another terminal:
+The original GPT-OSS pipeline remains NOVA's configured webapp pipeline. **Qwen3 4B** is a separately selectable HA Assist pipeline using the same LM Studio server, model `qwen/qwen3-4b-2507`, and the same NOVA instructions/tools. See `home-assistant/qwen3-4b.json` and `experiments/qwen3-4b/` for reference settings and checks. To change the webapp's provider, deliberately update `HA_PIPELINE_ID` in the private `.env` and restart NOVA.
 
-```sh
-fm serve --host 172.16.152.1 --port 1976
-# Separate terminal, inside this repository:
-FM_BRIDGE_HOST=172.16.152.1 FM_UPSTREAM=http://172.16.152.1:1976 npm run fm:bridge
-```
+The Apple FM provider/pipeline was removed from live HA and its compatibility bridge stopped. Historical code and results remain in `experiments/apple-fm/`; the bridge is not required by GPT-OSS or Qwen.
 
-HA connects to `http://172.16.152.1:1977/v1`. Port 1977 is the bridge, port 1976 is Apple’s server. These addresses are on this Mac’s VM network. For a different network, explicitly configure the bindings and endpoints; this bridge is intended for the trusted local VM network and adds no authentication layer.
+## Start a movie or episode over
 
-The bridge preserves messages, tool names, responses and streaming, but converts four incompatible HA tool schemas: live-context domains become arrays, relative volume changes become signed integers, and mute/unmute flags get boolean types. HA already accepts those representations. Unknown union/untyped schemas return an explicit compatibility error instead of being dropped. See `experiments/apple-fm/` for observations and limitations.
+Netflix, HBO Max and Prime Video title tools accept a default-off `from_start` boolean. For example: “Play White Chicks on Netflix from the start,” “Play Game of Thrones on HBO from the beginning,” or “Play Fallout on Prime Video from the start.” Regular play/resume requests keep their previous behavior. A recent, unambiguous title/service can supply context for “start this over”; otherwise NOVA asks which title/service.
+
+Restart means the selected movie or current episode, not the first episode of a series. These paths use each app’s tested Sony UI controls and do not independently measure playback position. Netflix expects the desired profile already selected. HBO establishes a cold app/profile launch before choosing Resume or Restart. Prime uses its configured highlighted-profile step and selects the circular-arrow icon with Up then OK. No ad-skipping commands are sent. Apple TV+ restart is postponed. See the provider integration notes for UI/timing assumptions.

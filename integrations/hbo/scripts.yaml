@@ -1,0 +1,193 @@
+play_hbo_title:
+  alias: Play or open a title on HBO Max
+  description: 'Find a named title included with HBO Max in PH. query is the canonical
+    title. start_playback=true for play/watch/resume, false for details only. from_start=true
+    selects Restart instead of Resume for the selected movie or current episode. The
+    Sony HBO app is closed and relaunched to establish its profile-picker state; the
+    previously confirmed highlighted profile is selected before title controls. Actual
+    playback position is not verified. Catalog: Streaming Availability API by Movie
+    of the Night.'
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or show title only. Correct obvious STT homophones
+        from context. When a catalog result suggests a clearly intended canonical
+        title, retry once using that exact title.
+      required: true
+      selector:
+        text: null
+    start_playback:
+      name: Start playback
+      description: True for play/watch/resume; false for opening title details only.
+      default: true
+      selector:
+        boolean: {}
+    from_start:
+      name: From the beginning
+      description: True only for from the start/beginning/start over. Selects Restart
+        for the current movie or selected episode; never starts a series at episode
+        one.
+      default: false
+      selector:
+        boolean: {}
+  sequence:
+  - action: rest_command.netflix_title_search
+    data:
+      query: '{{ query | trim }}'
+    response_variable: search_response
+  - if: '{{ search_response.status != 200 or search_response.content is not sequence
+      or search_response.content is string or search_response.content is mapping }}'
+    then:
+    - variables:
+        failure_result:
+          status: failed
+          http_status: '{{ search_response.status }}'
+          command_sent: false
+          message: Title lookup failed. No TV command was sent. Report failure; never
+            claim playback.
+    - stop: Title lookup failed.
+      response_variable: failure_result
+  - variables:
+      matches: "{% set wanted = query | lower | regex_replace('[^a-z0-9]', '') %}\
+        \ {% set ns = namespace(found=[]) %} {% for item in search_response.content\
+        \ %}\n  {% set title = item.get('title', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% set original = item.get('originalTitle', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% if wanted and wanted in [title, original] %}\n    {% set ns.found\
+        \ = ns.found + [item] %}\n  {% endif %}\n{% endfor %} {{ ns.found }}"
+  - variables:
+      eligible_matches: "{% set ns = namespace(found=[]) %}\n{% for item in matches\
+        \ %}\n  {% set available = namespace(value=false) %}\n  {% for option in item.get('streamingOptions',\
+        \ {}).get('ph', []) %}\n    {% if option.get('service', {}).get('id') == 'hbo'\
+        \ and option.get('type') == 'subscription' and option.get('link') %}\n   \
+        \   {% set available.value = true %}\n    {% endif %}\n  {% endfor %}\n  {%\
+        \ if available.value %}{% set ns.found = ns.found + [item] %}{% endif %}\n\
+        {% endfor %}{{ ns.found }}"
+  - variables:
+      matches: '{{ eligible_matches if eligible_matches | count == 1 else matches
+        }}'
+  - if: '{{ matches | count != 1 }}'
+    then:
+    - variables:
+        clarification_result:
+          status: '{{ ''needs_title_correction'' if matches | count == 0 else ''needs_clarification''
+            }}'
+          command_sent: false
+          message: No unique exact title match. If the transcript has an obvious title
+            homophone or speech error, select the clearly intended canonical title
+            from these catalog candidates and call this tool once more with that title.
+            Ask only when genuinely uncertain. No TV command has been sent.
+          candidates: "{% set ns = namespace(items=[]) %}\n{% set candidates = matches\
+            \ if matches | count > 0 else search_response.content %}\n{% for item\
+            \ in candidates[:12] %}\n {% set available = namespace(value=false) %}\n\
+            \ {% for option in item.get('streamingOptions', {}).get('ph', []) %}\n\
+            \  {% if option.get('service', {}).get('id') == 'hbo' and option.get('type')\
+            \ == 'subscription' and option.get('link') %}{% set available.value =\
+            \ true %}{% endif %}\n {% endfor %}\n {% if available.value %}\n  {% set\
+            \ ns.items = ns.items + [dict(title=item.get('title'), type=item.get('showType'),\
+            \ year=item.get('releaseYear', item.get('firstAirYear')), available_on_requested_service=true)]\
+            \ %}\n {% endif %}\n{% endfor %}{{ ns.items }}"
+          heard_title: '{{ query }}'
+    - stop: Title needs clarification.
+      response_variable: clarification_result
+  - variables:
+      hbo_links: '{% set ns = namespace(links=[]) %}
+
+        {% for option in matches[0].get(''streamingOptions'', {}).get(''ph'', [])
+        %}
+
+        {% set link = option.get(''link'', '''') %}
+
+        {% if option.get(''service'', {}).get(''id'') == ''hbo'' and option.get(''type'')
+        == ''subscription'' and link | regex_match(''^https://play[.]hbomax[.]com/(show|movie)/[a-zA-Z0-9-]+/?$'')
+        %}
+
+        {% set ns.links = ns.links + [link] %}
+
+        {% endif %}
+
+        {% endfor %}{{ ns.links | unique | list }}'
+  - if: '{{ hbo_links | count != 1 }}'
+    then:
+    - variables:
+        unavailable_result:
+          status: unavailable
+          title: '{{ matches[0].title }}'
+          country: PH
+          command_sent: false
+          message: No unique HBO Max PH subscription link was returned. No TV command
+            was sent.
+    - stop: HBO Max PH link unavailable.
+      response_variable: unavailable_result
+  - action: androidtv.adb_command
+    continue_on_error: true
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: am force-stop com.wbd.stream && echo NOVA_HBO_STOP_{{ context.id }}
+  - if: '{{ (''NOVA_HBO_STOP_'' ~ context.id) not in (state_attr(''media_player.android_tv_10_0_0_174'',
+      ''adb_response'') | default('''', true)) }}'
+    then:
+    - variables:
+        hbo_startup_failure:
+          status: failed
+          command_sent: true
+          playback_verified: false
+          message: Could not establish a fresh HBO app launch. No title link or selection
+            commands were sent.
+    - stop: HBO cold launch failed.
+      response_variable: hbo_startup_failure
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+  - delay: 00:00:01
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.sony_xr_55x90l_2
+    data:
+      media_content_type: url
+      media_content_id: '{{ hbo_links[0] }}'
+  - delay: 00:00:08
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: DPAD_CENTER
+  - if: '{{ start_playback | default(true) }}'
+    then:
+    - delay: 00:00:05
+    - if: '{{ from_start | default(false) }}'
+      then:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command:
+          - DPAD_RIGHT
+          - DPAD_CENTER
+          delay_secs: 0.4
+      else:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command: DPAD_CENTER
+  - variables:
+      launch_result:
+        status: '{{ (''restart_requested'' if from_start | default(false) else ''playback_requested'')
+          if start_playback | default(true) else ''title_link_sent'' }}'
+        title: '{{ matches[0].title }}'
+        country: PH
+        title_link: '{{ hbo_links[0] }}'
+        command_sent: true
+        playback_verified: false
+        message: Fresh HBO launch and highlighted-profile selection completed. Resume
+          or the adjacent Restart button selected only for playback requests. Actual
+          playback/start position is not verified; no ad-skipping commands sent.
+        from_start: '{{ from_start | default(false) and start_playback | default(true)
+          }}'
+        restart_verified: false
+  - stop: HBO Max request sent.
+    response_variable: launch_result

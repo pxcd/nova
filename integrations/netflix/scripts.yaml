@@ -1,0 +1,200 @@
+play_netflix_title:
+  alias: Play a show or movie on Netflix
+  description: 'Find a named movie or show on Netflix in the Philippines and send
+    its title link to the living room Sony TV. For watch/play requests with a content
+    title, use this instead of the plain Netflix launcher. Pass only the title in
+    query. Always send a fresh command, including repeated requests. Reports whether
+    the command was sent, not whether playback actually started. Availability data
+    provided by Streaming Availability API by Movie of the Night: https://www.movieofthenight.com/about/api
+    Returns to Google TV home before sending the title link so Netflix handles it
+    when already open. Set from_start=true only for explicit restart/from-the-beginning
+    requests. Uses the tested Netflix playback menu; expects the desired profile already
+    selected.'
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or show title only. Correct obvious STT homophones
+        from context. When a catalog result suggests a clearly intended canonical
+        title, retry once using that exact title.
+      required: true
+      selector:
+        text: null
+    from_start:
+      name: From the beginning
+      description: True only when the user asks from the start/beginning/start over.
+        Restarts the selected movie or current episode, not the whole series.
+      default: false
+      selector:
+        boolean: {}
+  sequence:
+  - action: rest_command.netflix_title_search
+    data:
+      query: '{{ query | trim }}'
+    response_variable: search_response
+  - if: '{{ search_response.status != 200 or search_response.content is not sequence
+      or search_response.content is string or search_response.content is mapping }}'
+    then:
+    - variables:
+        failure_result:
+          status: failed
+          http_status: '{{ search_response.status }}'
+          command_sent: false
+          message: Title lookup failed. No TV command was sent. Report failure; never
+            claim playback.
+    - stop: Title lookup failed.
+      response_variable: failure_result
+  - variables:
+      matches: "{% set wanted = query | lower | regex_replace('[^a-z0-9]', '') %}\
+        \ {% set ns = namespace(found=[]) %} {% for item in search_response.content\
+        \ %}\n  {% set title = item.get('title', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% set original = item.get('originalTitle', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% if wanted and wanted in [title, original] %}\n    {% set ns.found\
+        \ = ns.found + [item] %}\n  {% endif %}\n{% endfor %} {{ ns.found }}"
+  - variables:
+      eligible_matches: "{% set ns = namespace(found=[]) %}\n{% for item in matches\
+        \ %}\n  {% set available = namespace(value=false) %}\n  {% for option in item.get('streamingOptions',\
+        \ {}).get('ph', []) %}\n    {% if option.get('service', {}).get('id') == 'netflix'\
+        \ and option.get('type') == 'subscription' and option.get('link') %}\n   \
+        \   {% set available.value = true %}\n    {% endif %}\n  {% endfor %}\n  {%\
+        \ if available.value %}{% set ns.found = ns.found + [item] %}{% endif %}\n\
+        {% endfor %}{{ ns.found }}"
+  - variables:
+      matches: '{{ eligible_matches if eligible_matches | count == 1 else matches
+        }}'
+  - if: '{{ matches | count != 1 }}'
+    then:
+    - variables:
+        clarification_result:
+          status: '{{ ''needs_title_correction'' if matches | count == 0 else ''needs_clarification''
+            }}'
+          command_sent: false
+          message: No unique exact title match. If the transcript has an obvious title
+            homophone or speech error, select the clearly intended canonical title
+            from these catalog candidates and call this tool once more with that title.
+            Ask only when genuinely uncertain. No TV command has been sent.
+          candidates: "{% set ns = namespace(items=[]) %}\n{% set candidates = matches\
+            \ if matches | count > 0 else search_response.content %}\n{% for item\
+            \ in candidates[:12] %}\n {% set available = namespace(value=false) %}\n\
+            \ {% for option in item.get('streamingOptions', {}).get('ph', []) %}\n\
+            \  {% if option.get('service', {}).get('id') == 'netflix' and option.get('type')\
+            \ == 'subscription' and option.get('link') %}{% set available.value =\
+            \ true %}{% endif %}\n {% endfor %}\n {% if available.value %}\n  {% set\
+            \ ns.items = ns.items + [dict(title=item.get('title'), type=item.get('showType'),\
+            \ year=item.get('releaseYear', item.get('firstAirYear')), available_on_requested_service=true)]\
+            \ %}\n {% endif %}\n{% endfor %}{{ ns.items }}"
+          heard_title: '{{ query }}'
+    - stop: Title needs clarification.
+      response_variable: clarification_result
+  - variables:
+      netflix_ids: "{% set ns = namespace(ids=[]) %} {% for option in matches[0].get('streamingOptions',\
+        \ {}).get('ph', []) %}\n  {% if option.get('service', {}).get('id') == 'netflix'\
+        \ and option.get('type') == 'subscription' %}\n    {% set ids = option.get('link',\
+        \ '') | regex_findall('^https://www[.]netflix[.]com/title/([0-9]{6,8})/?$')\
+        \ %}\n    {% set ns.ids = ns.ids + ids %}\n  {% endif %}\n{% endfor %} {{\
+        \ ns.ids | unique | list }}"
+  - if: '{{ netflix_ids | count != 1 }}'
+    then:
+    - variables:
+        unavailable_result:
+          status: unavailable
+          title: '{{ matches[0].title }}'
+          country: PH
+          command_sent: false
+          message: No unique Netflix PH subscription link was returned. Nothing was
+            sent to the TV; do not claim playback.
+    - stop: Netflix PH link unavailable.
+      response_variable: unavailable_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+  - delay: 00:00:01
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.sony_xr_55x90l_2
+    data:
+      media_content_type: url
+      media_content_id: https://www.netflix.com/title/{{ netflix_ids[0] }}?source=30
+  - if: '{{ from_start | default(false) }}'
+    then:
+    - delay: 00:00:08
+    - action: script.netflix_restart_from_playback
+      response_variable: restart_outcome
+    - variables:
+        restart_response:
+          status: '{{ restart_outcome.status }}'
+          title: '{{ matches[0].title }}'
+          country: PH
+          netflix_id: '{{ netflix_ids[0] }}'
+          command_sent: true
+          from_start: true
+          playback_verified: false
+          restart_verified: false
+          message: '{{ restart_outcome.message }}'
+    - stop: Netflix start-over request finished.
+      response_variable: restart_response
+  - variables:
+      launch_result:
+        status: title_link_sent
+        title: '{{ matches[0].title }}'
+        country: PH
+        netflix_id: '{{ netflix_ids[0] }}'
+        command_sent: true
+        playback_verified: false
+        message: Netflix title link sent. Playback and profile selection are not verified.
+  - stop: Netflix title link sent.
+    response_variable: launch_result
+netflix_restart_from_playback:
+  alias: Netflix restart from active playback (internal)
+  description: Internal tested Sony Netflix sequence. Requires active Netflix playback;
+    never use on a profile picker or browsing page.
+  mode: single
+  sequence:
+  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: false
+          restart_verified: false
+          message: Netflix is not the foreground app. No restart command was sent.
+    - stop: Netflix playback required.
+      response_variable: restart_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: BACK
+  - delay: 00:00:01
+  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: true
+          restart_verified: false
+          message: Netflix exited instead of opening the playback title menu. No restart
+            option was selected.
+    - stop: Netflix restart menu unavailable.
+      response_variable: restart_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command:
+      - DPAD_DOWN
+      - DPAD_CENTER
+      delay_secs: 0.4
+  - variables:
+      restart_result:
+        status: restart_requested
+        command_sent: true
+        restart_verified: false
+        message: Selected Netflix Continue from the beginning, one row below Resume.
+          Position is not independently verified.
+  - stop: Netflix restart requested.
+    response_variable: restart_result

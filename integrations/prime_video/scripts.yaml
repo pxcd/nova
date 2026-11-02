@@ -7,7 +7,9 @@ play_prime_video_title:
     title launches: select_profile defaults true and selects the previously confirmed
     highlighted profile, then presses Play once. Set false if profile selection is
     no longer required. Does not skip ads or verify video playback. Catalog: Streaming
-    Availability API by Movie of the Night.'
+    Availability API by Movie of the Night. Set from_start=true only for explicit
+    start-over requests: from the focused Resume button, Up selects the circular-arrow
+    Restart icon, then OK confirms. No ad-skipping commands are sent.'
   mode: single
   fields:
     query:
@@ -37,6 +39,13 @@ play_prime_video_title:
       description: True for this Sony, which shows its already-highlighted desired
         profile on title launches. False only when profile selection is not required.
       default: true
+      selector:
+        boolean: {}
+    from_start:
+      name: From the beginning
+      description: True only for explicit from the start/beginning/start over. Restarts
+        the selected movie or current episode, not the whole series.
+      default: false
       selector:
         boolean: {}
   sequence:
@@ -166,26 +175,40 @@ play_prime_video_title:
   - if: '{{ start_playback | default(true) }}'
     then:
     - delay: 00:00:05
-    - action: remote.send_command
-      target:
-        entity_id: remote.sony_xr_55x90l
-      data:
-        command: DPAD_CENTER
+    - if: '{{ from_start | default(false) }}'
+      then:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command:
+          - DPAD_UP
+          - DPAD_CENTER
+          delay_secs: 0.4
+      else:
+      - action: remote.send_command
+        target:
+          entity_id: remote.sony_xr_55x90l
+        data:
+          command: DPAD_CENTER
   - variables:
       launch_result:
-        status: '{{ ''playback_requested'' if start_playback | default(true) else
-          ''title_link_sent'' }}'
+        status: '{{ (''restart_requested'' if from_start | default(false) else ''playback_requested'')
+          if start_playback | default(true) else ''title_link_sent'' }}'
         title: '{{ matches[0].title }}'
         country: PH
         title_link: '{{ prime_links[0] }}'
         command_sent: true
         playback_verified: false
-        message: Prime title intent delivered to the installed Sony app. Highlighted
-          profile selected if configured; Play pressed only for playback requests.
-          Actual playback and ad completion are not verified. No extra commands were
-          sent to skip ads.
+        message: Prime title intent delivered and highlighted profile selected if
+          configured. Resume or the circular-arrow Restart icon selected only for
+          playback requests. Actual playback/start position is not verified; no ad-skipping
+          commands sent.
         year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
           }}'
+        from_start: '{{ from_start | default(false) and start_playback | default(true)
+          }}'
+        restart_verified: false
   - stop: Prime Video request sent.
     response_variable: launch_result
 launch_prime_video_living_room:

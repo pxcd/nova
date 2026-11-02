@@ -1,0 +1,118 @@
+{
+  "model": "qwen/qwen3-4b-2507",
+  "executedTools": false,
+  "catalogResponsesSimulated": true,
+  "results": [
+    {
+      "id": "spoken_year",
+      "status": 200,
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "query": "Mean Girls",
+        "media_type": "movie",
+        "year": 2004
+      },
+      "reply": "",
+      "elapsedSeconds": 4.589,
+      "modelRounds": 1,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "original_followup",
+      "status": 200,
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "query": "Mean Girls",
+        "media_type": "movie",
+        "year": 2004
+      },
+      "reply": "",
+      "elapsedSeconds": 2.019,
+      "modelRounds": 2,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "episode",
+      "status": 200,
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "query": "South Park",
+        "media_type": "series",
+        "season": 28,
+        "episode": 1
+      },
+      "reply": "",
+      "elapsedSeconds": 0.954,
+      "modelRounds": 1,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "netflix_restart",
+      "status": 200,
+      "tool": "script__play_netflix_title",
+      "args": {
+        "query": "White Chicks",
+        "from_start": true
+      },
+      "reply": "",
+      "elapsedSeconds": 0.571,
+      "modelRounds": 1,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "hbo_restart",
+      "status": 200,
+      "tool": "script__play_hbo_title",
+      "args": {
+        "query": "Game of Thrones",
+        "start_playback": true,
+        "from_start": true
+      },
+      "reply": "",
+      "elapsedSeconds": 0.767,
+      "modelRounds": 1,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "prime_restart",
+      "status": 200,
+      "tool": "script__play_prime_video_title",
+      "args": {
+        "query": "Fallout",
+        "start_playback": true,
+        "from_start": true
+      },
+      "reply": "",
+      "elapsedSeconds": 0.818,
+      "modelRounds": 1,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "ordinary_resume",
+      "status": 200,
+      "tool": "script__play_prime_video_title",
+      "args": {
+        "query": "Fallout",
+        "start_playback": true
+      },
+      "reply": "",
+      "elapsedSeconds": 0.832,
+      "modelRounds": 1,
+      "pass": true,
+      "failures": []
+    }
+  ],
+  "notes": [
+    "One trial per case; not a statistical benchmark.",
+    "Actual HA tool schemas from an LM Studio request were used, with the three current from_start boolean fields added. Descriptions inherited the request logger truncation.",
+    "No model-selected device tools executed. Kodi catalog responses were simulated when requested.",
+    "Durations are complete non-streaming model requests, not TTFT, and exclude actual TV/catalog latency.",
+    "A real HA no-action streaming greeting also succeeded in 3.666 seconds."
+  ]
+}

@@ -10,10 +10,10 @@ This directory versions NOVA-owned configuration, not a complete HA backup. It c
 4. Merge `scripts.yaml`, `rest_commands.yaml`, and `shell_commands.yaml` into `/config`, preserving unrelated existing configuration. See `configuration.example.yaml` for include syntax. Existing include filenames can differ; avoid duplicate YAML keys.
 5. Copy `../integrations/kodi/pov.py` to `/config/nova_pov.py`. Enable authenticated Kodi HTTP JSON-RPC on port 8080. Install/configure POV separately; it is not bundled here.
 6. Supply the entries in `secrets.example.yaml` in HA’s private `/config/secrets.yaml`. Obtain your own Streaming Availability API key from Movie of the Night. Never commit the populated secrets file.
-7. Validate HA configuration and reload scripts. Expose the public scripts to Assist, including the streaming-service, Kodi search/play and TV Home scripts. Keep `script.pov_execute_request` hidden. Pairings and authorization must be restored manually or from your separately protected HA backup.
+7. Validate HA configuration and reload scripts. Expose the public scripts to Assist, including the streaming-service, Kodi search/play and TV Home scripts. Keep `script.pov_execute_request` and `script.netflix_restart_from_playback` hidden. Pairings and authorization must be restored manually or from your separately protected HA backup.
 
 Provider-specific notes and mocked-service tests live under `../integrations/`. Prime’s profile step assumes the desired profile is highlighted, based on this TV’s tested behavior. Playback UI timings, app URLs and provider catalogs can change. The agent must not treat a sent command as independently verified playback.
 
 This snapshot does not contain automatic installation or deployment tooling. In particular, never replace an existing HA `.storage` directory with repository files.
 
-`pipelines.json` records the actual production and experimental voice-pipeline settings. `apple-fm.experimental.json` describes the separate Apple on-device test provider. It has not replaced NOVA’s GPT-OSS pipeline; dry-run results and limitations are under `../experiments/apple-fm/`.
+`pipelines.json` records the current Assist pipelines, including GPT-OSS and Qwen3 4B. `qwen3-4b.json` describes the separate Qwen agent on the same LM Studio server. Apple FM was removed from live HA; its former connection reference is archived under `../experiments/apple-fm/`. Netflix, HBO and Prime title tools now accept `from_start`; keep the internal Netflix restart helper hidden. Apple TV+ restart is postponed.

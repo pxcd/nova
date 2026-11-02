@@ -1,33 +1,50 @@
 {
-  "nova": {
-    "conversation_engine": "conversation.lm_studio_synapse_openai_gpt_oss_20b_ai_agent",
-    "conversation_language": "*",
-    "language": "en",
-    "name": "GPT-OSS",
-    "stt_engine": "stt.faster_whisper",
-    "stt_language": "en",
-    "tts_engine": "tts.piper",
-    "tts_language": "en_US",
-    "tts_voice": "en_US-hfc_female-medium",
-    "wake_word_entity": null,
-    "wake_word_id": null,
-    "prefer_local_intents": false,
-    "id": "01m6bgw84tdtwygj299s623dwh"
-  },
-  "experimental": {
-    "conversation_engine": "conversation.apple_fm_experimental_system_ai_agent",
-    "conversation_language": "*",
-    "language": "en",
-    "name": "Apple FM — Experimental",
-    "stt_engine": "stt.faster_whisper",
-    "stt_language": "en",
-    "tts_engine": "tts.piper",
-    "tts_language": "en_US",
-    "tts_voice": "en_US-hfc_female-medium",
-    "wake_word_entity": null,
-    "wake_word_id": null,
-    "prefer_local_intents": false,
-    "id": "01m6dfdd80np5qd8fnxzwdj379"
-  },
-  "haPreferred": "01m6bgatztwt3rx92y6gp104bb"
+  "pipelines": [
+    {
+      "conversation_engine": "conversation.home_assistant",
+      "conversation_language": "en",
+      "language": "en",
+      "name": "Home Assistant",
+      "stt_engine": null,
+      "stt_language": null,
+      "tts_engine": null,
+      "tts_language": null,
+      "tts_voice": null,
+      "wake_word_entity": null,
+      "wake_word_id": null,
+      "prefer_local_intents": false,
+      "id": "01m6bgatztwt3rx92y6gp104bb"
+    },
+    {
+      "conversation_engine": "conversation.lm_studio_synapse_openai_gpt_oss_20b_ai_agent",
+      "conversation_language": "*",
+      "language": "en",
+      "name": "GPT-OSS",
+      "stt_engine": "stt.faster_whisper",
+      "stt_language": "en",
+      "tts_engine": "tts.piper",
+      "tts_language": "en_US",
+      "tts_voice": "en_US-hfc_female-medium",
+      "wake_word_entity": null,
+      "wake_word_id": null,
+      "prefer_local_intents": false,
+      "id": "01m6bgw84tdtwygj299s623dwh"
+    },
+    {
+      "conversation_engine": "conversation.lm_studio_synapse_qwen_qwen3_4b_2507_ai_agent",
+      "conversation_language": "*",
+      "language": "en",
+      "name": "Qwen3 4B",
+      "stt_engine": "stt.faster_whisper",
+      "stt_language": "en",
+      "tts_engine": "tts.piper",
+      "tts_language": "en_US",
+      "tts_voice": "en_US-hfc_female-medium",
+      "wake_word_entity": null,
+      "wake_word_id": null,
+      "prefer_local_intents": false,
+      "id": "01m6dmt3bjms776gj44ecx1qjc"
+    }
+  ],
+  "preferred_pipeline": "01m6bgatztwt3rx92y6gp104bb"
 }

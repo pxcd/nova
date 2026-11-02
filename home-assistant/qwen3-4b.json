@@ -1,0 +1,15 @@
+{
+  "server_entry": "LM Studio — Synapse",
+  "base_url": "http://172.16.152.1:1234/v1",
+  "model": "qwen/qwen3-4b-2507",
+  "observed_quantization": "4bit",
+  "agent_entity_id": "conversation.lm_studio_synapse_qwen_qwen3_4b_2507_ai_agent",
+  "pipeline_id": "01m6dmt3bjms776gj44ecx1qjc",
+  "parallel_tool_calls": false,
+  "max_message_history": 3,
+  "llm_hass_api": [
+    "assist"
+  ],
+  "prompt_reference": "agent-settings.json:prompt",
+  "nova_default_provider_changed": false
+}

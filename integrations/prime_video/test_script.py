@@ -25,7 +25,9 @@ async def main():
  assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER','DPAD_CENTER']
  result=await run(start_playback=False);assert result['status']=='title_link_sent';assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER']
  result=await run(select_profile=False);assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER']
- print('PASS playback targets installed Prime app; details-only selects profile without pressing Play; profile step can be disabled')
+ result=await run(from_start=True);assert result['status']=='restart_requested' and result['from_start'] is True;assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER',['DPAD_UP','DPAD_CENTER']]
+ result=await run(from_start=True,start_playback=False);assert result['status']=='title_link_sent' and result['from_start'] is False;assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER']
+ print('PASS normal playback unchanged; explicit Restart uses Up + OK; details-only never restarts; profile step can be disabled')
  item=movie();item['streamingOptions']['ph'].append({**item['streamingOptions']['ph'][0],'link':URL.replace('fb4939ee','ab4939ee')});response={'status':200,'content':[item]};result=await run();assert result['status']=='playback_requested'
  response={'status':200,'content':[movie(year=2004),movie(year=2024)]};result=await run(year=2004,start_playback=False);assert result['year']==2004
  result=await run();assert result['status']=='needs_clarification' and not calls
