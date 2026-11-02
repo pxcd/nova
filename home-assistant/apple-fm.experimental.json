@@ -1,0 +1,17 @@
+{
+  "experimental": true,
+  "server_name": "Apple FM — Experimental",
+  "base_url": "http://172.16.152.1:1976/v1",
+  "api_key_required": false,
+  "model": "system",
+  "parallel_tool_calls": false,
+  "max_message_history": 3,
+  "llm_hass_api": [
+    "assist"
+  ],
+  "prompt_reference": "agent-settings.json:prompt",
+  "agent_entity_id": "conversation.apple_fm_experimental_system_ai_agent",
+  "pipeline_id": "01m6dfdd80np5qd8fnxzwdj379",
+  "start_command": "fm serve --host 172.16.152.1 --port 1976",
+  "default_provider_changed": false
+}

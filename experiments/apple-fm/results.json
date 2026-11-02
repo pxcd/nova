@@ -1,0 +1,183 @@
+{
+  "model": "system",
+  "executedTools": false,
+  "results": [
+    {
+      "id": "spoken_year",
+      "status": 200,
+      "elapsedSeconds": 5.258,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "year": 2004,
+        "media_type": "movie",
+        "query": "Mean Girls"
+      },
+      "modelRounds": 2,
+      "simulatedCatalog": true
+    },
+    {
+      "id": "explicit_year",
+      "status": 200,
+      "elapsedSeconds": 5.059,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "media_type": "movie",
+        "query": "Mean Girls",
+        "year": 2004
+      },
+      "modelRounds": 2,
+      "simulatedCatalog": true
+    },
+    {
+      "id": "original_followup",
+      "status": 200,
+      "elapsedSeconds": 4.491,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "query": "Mean Girls",
+        "year": 2004,
+        "media_type": "movie"
+      },
+      "modelRounds": 2,
+      "simulatedCatalog": true
+    },
+    {
+      "id": "year_followup",
+      "status": 200,
+      "elapsedSeconds": 4.672,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "year": 2004,
+        "media_type": "movie",
+        "query": "Mean Girls"
+      },
+      "modelRounds": 2,
+      "simulatedCatalog": true
+    },
+    {
+      "id": "explicit_episode",
+      "status": 200,
+      "elapsedSeconds": 4.696,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_kodi_pov",
+      "args": {
+        "season": 28,
+        "year": 1997,
+        "episode": 1,
+        "query": "South Park",
+        "media_type": "series"
+      },
+      "modelRounds": 2,
+      "simulatedCatalog": true
+    },
+    {
+      "id": "netflix_route",
+      "status": 200,
+      "elapsedSeconds": 2.014,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_netflix_title",
+      "args": {
+        "query": "The Mentalist",
+        "start_playback": true
+      },
+      "usage": {
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_tokens": 2258,
+        "completion_tokens": 32,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 2290
+      }
+    },
+    {
+      "id": "apple_route",
+      "status": 200,
+      "elapsedSeconds": 2.015,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_apple_tv_title",
+      "args": {
+        "query": "Severance",
+        "start_playback": true
+      },
+      "usage": {
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens": 32,
+        "prompt_tokens": 2259,
+        "total_tokens": 2291,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "id": "prime_route",
+      "status": 200,
+      "elapsedSeconds": 2.054,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_prime_video_title",
+      "args": {
+        "query": "Fallout",
+        "start_playback": true
+      },
+      "usage": {
+        "total_tokens": 2289,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_tokens": 2257,
+        "completion_tokens": 32,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "id": "repeat_action",
+      "status": 200,
+      "elapsedSeconds": 2.112,
+      "pass": true,
+      "failures": [],
+      "tool": "script__play_prime_video_title",
+      "args": {
+        "start_playback": true,
+        "query": "Fallout"
+      },
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 2358,
+        "total_tokens": 2390,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  ],
+  "catalogResponsesSimulated": true,
+  "notes": [
+    "One trial per case; not a statistical benchmark.",
+    "Tool definitions supplied to the model are representative playback/search schemas, not the complete HA Assist tool bundle.",
+    "No model-selected tools were executed. Kodi search results were simulated before grading the final playback arguments.",
+    "Elapsed times are complete non-streaming model requests, not TTFT, and exclude actual device/catalog latency.",
+    "HA conversation/streaming compatibility was checked with device tools disabled. Live HA device-tool use remains unverified."
+  ]
+}
