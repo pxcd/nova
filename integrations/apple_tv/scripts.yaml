@@ -154,6 +154,12 @@ play_apple_tv_title:
         entity_id: remote.sony_xr_55x90l
       data:
         command: DPAD_CENTER
+    - delay: 00:00:02
+    - action: remote.send_command
+      target:
+        entity_id: remote.sony_xr_55x90l
+      data:
+        command: MEDIA_PLAY
   - variables:
       launch_result:
         status: '{{ ''playback_requested'' if start_playback | default(true) else
@@ -163,8 +169,8 @@ play_apple_tv_title:
         title_link: '{{ apple_links[0] }}'
         command_sent: true
         playback_verified: false
-        message: Apple TV+ title intent delivered to the installed Sony app. One OK
-          sent only for playback requests; actual playback is not verified.
+        message: Apple TV+ title intent delivered to the installed Sony app. Title selection
+          and dedicated Play sent only for playback requests; actual playback is not verified.
         year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
           }}'
   - stop: Apple TV+ request sent.

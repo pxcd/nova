@@ -1,4 +1,4 @@
-import asyncio,copy,yaml
+import asyncio,copy,os,yaml
 from homeassistant.core import HomeAssistant,Context,SupportsResponse
 from homeassistant.helpers.script import Script
 from homeassistant.helpers import config_validation as cv
@@ -10,7 +10,7 @@ def no_delays(value):
  if isinstance(value,dict):return {k:no_delays(v) for k,v in value.items()}
  return value
 async def main():
- hass=HomeAssistant('/tmp/apple-script-check');raw=yaml.safe_load(open('/config/scripts.yaml'))['play_apple_tv_title']['sequence'];calls=[];response={'status':200,'content':[movie()]};adb_ok=True
+ hass=HomeAssistant('/tmp/apple-script-check');raw=yaml.safe_load(open(os.environ.get('NOVA_APPLE_SCRIPTS_PATH','/config/scripts.yaml')))['play_apple_tv_title']['sequence'];calls=[];response={'status':200,'content':[movie()]};adb_ok=True
  async def lookup(call):return response
  async def capture(call):
   calls.append((call.domain,dict(call.data)))
@@ -22,9 +22,9 @@ async def main():
   calls.clear();return (await script.async_run({'query':'Severance',**kwargs},Context())).service_response
  result=await run();assert result['status']=='playback_requested',result
  command=next(data['command'] for domain,data in calls if domain=='androidtv');assert '-p com.apple.atve.sony.appletv' in command and URL in command
- assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER']
+ assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER','MEDIA_PLAY']
  result=await run(start_playback=False);assert result['status']=='title_link_sent';assert [d['command'] for domain,d in calls if domain=='remote']==['HOME']
- print('PASS playback targets installed Apple app; details-only does not press OK')
+ print('PASS playback targets installed Apple app; details-only sends neither OK nor Play')
  response={'status':200,'content':[movie(year=2004),movie(year=2024)]};result=await run(year=2004,start_playback=False);assert result['year']==2004
  result=await run();assert result['status']=='needs_clarification' and not calls
  print('PASS explicit year resolves collisions; ambiguity sends no TV commands')

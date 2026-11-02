@@ -81,3 +81,7 @@ API 31 and checked on the Sony XR-55X90L. No screenshot/UI recognition is requir
 foreground, fixed target, package, playing-state, position bounds, stale/malformed
 results and explicit failure behavior. No navigation or title-launch services are
 registered in that test.
+
+## Additional current-player restart tools
+
+`restart_current_hbo`, `restart_current_prime_video`, and `restart_current_apple_tv` use the same one-second absolute seek with a fixed allowlisted package. Start playback first, then request restart separately in HA Assist or NOVA. The app must be foreground and playing; no title lookup, launch, UI navigation, ad skipping, or automatic retry is performed. HBO and Prime can buffer or play an ad before the restarted content. All three were manually tested on the Sony: Severance (Apple TV+), Fallout (Prime), and Game of Thrones (HBO), with visible restart confirmed. These were playing-session tests; the subsequent four-app cold-start test was stopped by the user after Netflix ignored its seek. Cold-start reliability is not established.

@@ -9,13 +9,13 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.script import Script
 
 
-async def main():
+async def check(slug, package):
     hass = HomeAssistant('/tmp/nova-current-restart-check')
     path = os.environ.get('NOVA_RESTART_SCRIPTS_PATH', '/config/scripts.yaml')
-    raw = yaml.safe_load(Path(path).read_text())['restart_current_netflix']['sequence']
+    raw = yaml.safe_load(Path(path).read_text())['restart_current_' + slug]['sequence']
     calls = []
     mode = 'valid'
-    good = {'status': 'seek_confirmed', 'package': 'com.netflix.ninja', 'state_before': 3,
+    good = {'status': 'seek_confirmed', 'package': package, 'state_before': 3,
             'target_position_ms': 1000, 'command_sent': True, 'seek_verified': True,
             'position_after_ms': 88, 'state_after': 3}
 
@@ -39,11 +39,12 @@ async def main():
 
     hass.services.async_register('androidtv', 'adb_command', adb)
     script = Script(hass, cv.SCRIPT_SCHEMA(raw), 'Current Netflix restart', 'script')
-    hass.states.async_set('remote.sony_xr_55x90l', 'on', {'current_activity': 'com.netflix.ninja'})
+    hass.states.async_set('remote.sony_xr_55x90l', 'on', {'current_activity': package})
     result = (await script.async_run({'position_seconds': 1}, Context())).service_response
     assert result['status'] == 'restart_confirmed' and result['restart_verified'] is True
     assert result['position_after_ms'] == 88 and len(calls) == 1
     assert 'NovaSeek seek-one-second' in calls[0]['command']
+    if slug != 'netflix': assert '0 ' + package in calls[0]['command']
     assert not any(word in calls[0]['command'] for word in ['BACK', 'DPAD', 'am start', 'force-stop', 'REWIND'])
     for mode in ['stale', 'missing', 'bad_json', 'duplicate', 'wrong_package', 'paused',
                  'wrong_target', 'not_at_start', 'unverified', 'no_command', 'not_ready']:
@@ -58,7 +59,11 @@ async def main():
     hass.states.async_set('remote.sony_xr_55x90l', 'on', {'current_activity': 'other.app'})
     calls.clear()
     result = (await script.async_run({'position_seconds': 1}, Context())).service_response
-    assert result['status'] == 'needs_netflix_playback' and not calls
+    assert result['status'] == 'needs_' + slug + '_playback' and not calls
     print('PASS current-only seek validation, fresh marker, position/target/package/playing-state checks, malformed/stale result handling and wrong foreground rejection; no navigation/playback-launch services exist in this test.')
+
+async def main():
+    for slug, package in [('netflix', 'com.netflix.ninja'), ('hbo', 'com.wbd.stream'), ('prime_video', 'com.amazon.amazonvideo.livingroom'), ('apple_tv', 'com.apple.atve.sony.appletv')]:
+        await check(slug, package)
 
 asyncio.run(main())

@@ -855,6 +855,12 @@ play_apple_tv_title:
         entity_id: remote.sony_xr_55x90l
       data:
         command: DPAD_CENTER
+    - delay: 00:00:02
+    - action: remote.send_command
+      target:
+        entity_id: remote.sony_xr_55x90l
+      data:
+        command: MEDIA_PLAY
   - variables:
       launch_result:
         status: '{{ ''playback_requested'' if start_playback | default(true) else
@@ -864,8 +870,8 @@ play_apple_tv_title:
         title_link: '{{ apple_links[0] }}'
         command_sent: true
         playback_verified: false
-        message: Apple TV+ title intent delivered to the installed Sony app. One OK
-          sent only for playback requests; actual playback is not verified.
+        message: Apple TV+ title intent delivered to the installed Sony app. Title selection
+          and dedicated Play sent only for playback requests; actual playback is not verified.
         year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
           }}'
   - stop: Apple TV+ request sent.
@@ -1347,6 +1353,312 @@ restart_current_netflix:
           and the seek helper must be installed. No relaunch or UI fallback was used;
           do not retry automatically." }}'
   - stop: Current Netflix restart finished.
+    response_variable: restart_result
+  fields:
+    position_seconds:
+      name: Target position (seconds)
+      description: The supported instant-restart target is exactly 1 second. Always
+        pass 1; no title arguments.
+      required: true
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 1
+          step: 1
+          mode: box
+
+restart_current_hbo:
+  alias: Restart the currently playing HBO Max video
+  description: Instantly restart ONLY the currently playing HBO Max movie or current
+    episode by an absolute seek to one second. Pass position_seconds=1; no title/query
+    arguments. No title lookup, relaunch, Home, Back, directional keys, OK, or rewind
+    holds. HBO Max must already be foreground and playing. Use as a separate command
+    after normal playback, for example restart what is playing on HBO Max. This cannot
+    choose a title or identify its name. Do not use to restart a different named movie.
+    Reports restart_confirmed only when the same HBO Max session reports a position
+    within three seconds of the beginning. If unavailable or unverified, do not try
+    menu navigation or retries.
+  mode: single
+  sequence:
+  - if: '{{ position_seconds is defined and (position_seconds is not number or position_seconds
+      is boolean or position_seconds != 1) }}'
+    then:
+    - variables:
+        restart_result:
+          status: invalid_position
+          command_sent: false
+          restart_verified: false
+          message: Only the one-second instant-restart target is supported. No seek
+            command was sent.
+    - stop: Invalid instant restart target.
+      response_variable: restart_result
+  - if: '{{ state_attr("remote.sony_xr_55x90l", "current_activity") != "com.wbd.stream"
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_hbo_playback
+          command_sent: false
+          restart_verified: false
+          message: HBO Max must already be foreground and playing. Nothing was restarted
+            or launched.
+    - stop: Playing HBO Max video required.
+      response_variable: restart_result
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: printf 'NOVA_CURRENT_RESTART_{{ context.id }}\n'; CLASSPATH=/data/local/tmp/nova-seek.jar
+        app_process /system/bin NovaSeek seek-one-second 0 com.wbd.stream
+  - variables:
+      seek_output: '{{ state_attr("media_player.android_tv_10_0_0_174", "adb_response")
+        | default("", true) }}'
+  - if: '{{ ("NOVA_CURRENT_RESTART_" ~ context.id) not in seek_output }}'
+    then:
+    - variables:
+        restart_result:
+          status: unverified_restart
+          command_sent: true
+          restart_verified: false
+          message: Seek requested but no fresh helper result was received. Do not
+            claim success or retry. No UI fallback was sent.
+    - stop: Fresh seek result unavailable.
+      response_variable: restart_result
+  - variables:
+      seek_lines: '{{ seek_output | regex_findall("(?m)^NOVA_SEEK_RESULT=(.*)$") }}'
+  - variables:
+      seek_result: '{{ (seek_lines[0] | from_json({})) if seek_lines | count == 1
+        else {} }}'
+  - if: '{{ seek_result is not mapping }}'
+    then:
+    - variables:
+        seek_result: {}
+  - variables:
+      verified: "{{ seek_result.get('status') == 'seek_confirmed'\n   and seek_result.get('package')\
+        \ == 'com.wbd.stream'\n   and seek_result.get('state_before') == 3\n  \
+        \ and seek_result.get('target_position_ms') == 1000\n   and seek_result.get('command_sent')\
+        \ == true\n   and seek_result.get('seek_verified') == true\n   and seek_result.get('position_after_ms')\
+        \ is number\n   and 0 <= seek_result.get('position_after_ms') <= 3000 }}"
+  - variables:
+      restart_result:
+        status: '{{ "restart_confirmed" if verified else ("needs_hbo_playback"
+          if seek_result.get("status") == "not_ready" else "unverified_restart") }}'
+        command_sent: '{{ seek_result.get("command_sent", true) }}'
+        restart_verified: '{{ verified }}'
+        playback_verified: '{{ verified and seek_result.get("state_after") == 3 }}'
+        target_position_seconds: 1
+        position_after_ms: '{{ seek_result.get("position_after_ms") }}'
+        message: '{{ "The current HBO Max session reports a position within three
+          seconds of the beginning after an absolute seek to one second." if verified
+          else "Instant restart was not confirmed. HBO Max must already be playing
+          and the seek helper must be installed. No relaunch or UI fallback was used;
+          do not retry automatically." }}'
+  - stop: Current HBO Max restart finished.
+    response_variable: restart_result
+  fields:
+    position_seconds:
+      name: Target position (seconds)
+      description: The supported instant-restart target is exactly 1 second. Always
+        pass 1; no title arguments.
+      required: true
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 1
+          step: 1
+          mode: box
+
+restart_current_prime_video:
+  alias: Restart the currently playing Prime Video video
+  description: Instantly restart ONLY the currently playing Prime Video movie or current
+    episode by an absolute seek to one second. Pass position_seconds=1; no title/query
+    arguments. No title lookup, relaunch, Home, Back, directional keys, OK, or rewind
+    holds. Prime Video must already be foreground and playing. Use as a separate command
+    after normal playback, for example restart what is playing on Prime Video. This cannot
+    choose a title or identify its name. Do not use to restart a different named movie.
+    Reports restart_confirmed only when the same Prime Video session reports a position
+    within three seconds of the beginning. If unavailable or unverified, do not try
+    menu navigation or retries.
+  mode: single
+  sequence:
+  - if: '{{ position_seconds is defined and (position_seconds is not number or position_seconds
+      is boolean or position_seconds != 1) }}'
+    then:
+    - variables:
+        restart_result:
+          status: invalid_position
+          command_sent: false
+          restart_verified: false
+          message: Only the one-second instant-restart target is supported. No seek
+            command was sent.
+    - stop: Invalid instant restart target.
+      response_variable: restart_result
+  - if: '{{ state_attr("remote.sony_xr_55x90l", "current_activity") != "com.amazon.amazonvideo.livingroom"
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_prime_video_playback
+          command_sent: false
+          restart_verified: false
+          message: Prime Video must already be foreground and playing. Nothing was restarted
+            or launched.
+    - stop: Playing Prime Video video required.
+      response_variable: restart_result
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: printf 'NOVA_CURRENT_RESTART_{{ context.id }}\n'; CLASSPATH=/data/local/tmp/nova-seek.jar
+        app_process /system/bin NovaSeek seek-one-second 0 com.amazon.amazonvideo.livingroom
+  - variables:
+      seek_output: '{{ state_attr("media_player.android_tv_10_0_0_174", "adb_response")
+        | default("", true) }}'
+  - if: '{{ ("NOVA_CURRENT_RESTART_" ~ context.id) not in seek_output }}'
+    then:
+    - variables:
+        restart_result:
+          status: unverified_restart
+          command_sent: true
+          restart_verified: false
+          message: Seek requested but no fresh helper result was received. Do not
+            claim success or retry. No UI fallback was sent.
+    - stop: Fresh seek result unavailable.
+      response_variable: restart_result
+  - variables:
+      seek_lines: '{{ seek_output | regex_findall("(?m)^NOVA_SEEK_RESULT=(.*)$") }}'
+  - variables:
+      seek_result: '{{ (seek_lines[0] | from_json({})) if seek_lines | count == 1
+        else {} }}'
+  - if: '{{ seek_result is not mapping }}'
+    then:
+    - variables:
+        seek_result: {}
+  - variables:
+      verified: "{{ seek_result.get('status') == 'seek_confirmed'\n   and seek_result.get('package')\
+        \ == 'com.amazon.amazonvideo.livingroom'\n   and seek_result.get('state_before') == 3\n  \
+        \ and seek_result.get('target_position_ms') == 1000\n   and seek_result.get('command_sent')\
+        \ == true\n   and seek_result.get('seek_verified') == true\n   and seek_result.get('position_after_ms')\
+        \ is number\n   and 0 <= seek_result.get('position_after_ms') <= 3000 }}"
+  - variables:
+      restart_result:
+        status: '{{ "restart_confirmed" if verified else ("needs_prime_video_playback"
+          if seek_result.get("status") == "not_ready" else "unverified_restart") }}'
+        command_sent: '{{ seek_result.get("command_sent", true) }}'
+        restart_verified: '{{ verified }}'
+        playback_verified: '{{ verified and seek_result.get("state_after") == 3 }}'
+        target_position_seconds: 1
+        position_after_ms: '{{ seek_result.get("position_after_ms") }}'
+        message: '{{ "The current Prime Video session reports a position within three
+          seconds of the beginning after an absolute seek to one second." if verified
+          else "Instant restart was not confirmed. Prime Video must already be playing
+          and the seek helper must be installed. No relaunch or UI fallback was used;
+          do not retry automatically." }}'
+  - stop: Current Prime Video restart finished.
+    response_variable: restart_result
+  fields:
+    position_seconds:
+      name: Target position (seconds)
+      description: The supported instant-restart target is exactly 1 second. Always
+        pass 1; no title arguments.
+      required: true
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 1
+          step: 1
+          mode: box
+
+restart_current_apple_tv:
+  alias: Restart the currently playing Apple TV+ video
+  description: Instantly restart ONLY the currently playing Apple TV+ movie or current
+    episode by an absolute seek to one second. Pass position_seconds=1; no title/query
+    arguments. No title lookup, relaunch, Home, Back, directional keys, OK, or rewind
+    holds. Apple TV+ must already be foreground and playing. Use as a separate command
+    after normal playback, for example restart what is playing on Apple TV+. This cannot
+    choose a title or identify its name. Do not use to restart a different named movie.
+    Reports restart_confirmed only when the same Apple TV+ session reports a position
+    within three seconds of the beginning. If unavailable or unverified, do not try
+    menu navigation or retries.
+  mode: single
+  sequence:
+  - if: '{{ position_seconds is defined and (position_seconds is not number or position_seconds
+      is boolean or position_seconds != 1) }}'
+    then:
+    - variables:
+        restart_result:
+          status: invalid_position
+          command_sent: false
+          restart_verified: false
+          message: Only the one-second instant-restart target is supported. No seek
+            command was sent.
+    - stop: Invalid instant restart target.
+      response_variable: restart_result
+  - if: '{{ state_attr("remote.sony_xr_55x90l", "current_activity") != "com.apple.atve.sony.appletv"
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_apple_tv_playback
+          command_sent: false
+          restart_verified: false
+          message: Apple TV+ must already be foreground and playing. Nothing was restarted
+            or launched.
+    - stop: Playing Apple TV+ video required.
+      response_variable: restart_result
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: printf 'NOVA_CURRENT_RESTART_{{ context.id }}\n'; CLASSPATH=/data/local/tmp/nova-seek.jar
+        app_process /system/bin NovaSeek seek-one-second 0 com.apple.atve.sony.appletv
+  - variables:
+      seek_output: '{{ state_attr("media_player.android_tv_10_0_0_174", "adb_response")
+        | default("", true) }}'
+  - if: '{{ ("NOVA_CURRENT_RESTART_" ~ context.id) not in seek_output }}'
+    then:
+    - variables:
+        restart_result:
+          status: unverified_restart
+          command_sent: true
+          restart_verified: false
+          message: Seek requested but no fresh helper result was received. Do not
+            claim success or retry. No UI fallback was sent.
+    - stop: Fresh seek result unavailable.
+      response_variable: restart_result
+  - variables:
+      seek_lines: '{{ seek_output | regex_findall("(?m)^NOVA_SEEK_RESULT=(.*)$") }}'
+  - variables:
+      seek_result: '{{ (seek_lines[0] | from_json({})) if seek_lines | count == 1
+        else {} }}'
+  - if: '{{ seek_result is not mapping }}'
+    then:
+    - variables:
+        seek_result: {}
+  - variables:
+      verified: "{{ seek_result.get('status') == 'seek_confirmed'\n   and seek_result.get('package')\
+        \ == 'com.apple.atve.sony.appletv'\n   and seek_result.get('state_before') == 3\n  \
+        \ and seek_result.get('target_position_ms') == 1000\n   and seek_result.get('command_sent')\
+        \ == true\n   and seek_result.get('seek_verified') == true\n   and seek_result.get('position_after_ms')\
+        \ is number\n   and 0 <= seek_result.get('position_after_ms') <= 3000 }}"
+  - variables:
+      restart_result:
+        status: '{{ "restart_confirmed" if verified else ("needs_apple_tv_playback"
+          if seek_result.get("status") == "not_ready" else "unverified_restart") }}'
+        command_sent: '{{ seek_result.get("command_sent", true) }}'
+        restart_verified: '{{ verified }}'
+        playback_verified: '{{ verified and seek_result.get("state_after") == 3 }}'
+        target_position_seconds: 1
+        position_after_ms: '{{ seek_result.get("position_after_ms") }}'
+        message: '{{ "The current Apple TV+ session reports a position within three
+          seconds of the beginning after an absolute seek to one second." if verified
+          else "Instant restart was not confirmed. Apple TV+ must already be playing
+          and the seek helper must be installed. No relaunch or UI fallback was used;
+          do not retry automatically." }}'
+  - stop: Current Apple TV+ restart finished.
     response_variable: restart_result
   fields:
     position_seconds:

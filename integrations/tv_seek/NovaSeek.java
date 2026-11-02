@@ -9,7 +9,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import org.json.JSONObject;
 
-/** One-shot Netflix media-session probe/control, executed as the authorized ADB shell. */
+/** One-shot allowlisted media-session probe/control, executed as the authorized ADB shell. */
 public final class NovaSeek {
     private static final String PACKAGE = "com.netflix.ninja";
     private static final long START_TOLERANCE_MS = 3000;
@@ -20,15 +20,21 @@ public final class NovaSeek {
         try {
             String operation = args.length == 0 ? "inspect" : args[0];
             int waitSeconds = args.length < 2 ? 0 : Integer.parseInt(args[1]);
+            String packageName = args.length < 3 ? PACKAGE : args[2];
+            if (!(packageName.equals(PACKAGE) || packageName.equals("com.wbd.stream")
+                    || packageName.equals("com.amazon.amazonvideo.livingroom")
+                    || packageName.equals("com.apple.atve.sony.appletv"))) {
+                throw new IllegalArgumentException("Unsupported media app");
+            }
             if ((!operation.equals("inspect") && !operation.equals("seek-zero") && !operation.equals("seek-one-second"))
-                    || waitSeconds < 0 || waitSeconds > 45 || args.length > 2) {
-                throw new IllegalArgumentException("Usage: NovaSeek inspect|seek-zero|seek-one-second [wait-seconds:0..45]");
+                    || waitSeconds < 0 || waitSeconds > 45 || args.length > 3) {
+                throw new IllegalArgumentException("Usage: NovaSeek inspect|seek-zero|seek-one-second [wait-seconds:0..45] [app-package]");
             }
             if (Looper.getMainLooper() == null) Looper.prepareMainLooper();
             Context context = shellContext();
             initializeMediaServices();
             MediaSessionManager manager = (MediaSessionManager) context.getSystemService(Context.MEDIA_SESSION_SERVICE);
-            result = run(manager, !operation.equals("inspect"), waitSeconds, operation.equals("seek-one-second") ? 1000 : 0);
+            result = run(manager, !operation.equals("inspect"), waitSeconds, operation.equals("seek-one-second") ? 1000 : 0, packageName);
         } catch (Throwable error) {
             while (error instanceof InvocationTargetException && error.getCause() != null) error = error.getCause();
             result = new JSONObject();
@@ -72,7 +78,7 @@ public final class NovaSeek {
         }
     }
 
-    private static JSONObject run(MediaSessionManager manager, boolean seek, int waitSeconds, long targetMs) throws Exception {
+    private static JSONObject run(MediaSessionManager manager, boolean seek, int waitSeconds, long targetMs, String packageName) throws Exception {
         long deadline = SystemClock.elapsedRealtime() + waitSeconds * 1000L;
         MediaController selected = null;
         while (true) {
@@ -80,7 +86,7 @@ public final class NovaSeek {
             List<MediaController> sessions = manager.getActiveSessions(null);
             for (MediaController controller : sessions) {
                 PlaybackState state = controller.getPlaybackState();
-                if (!PACKAGE.equals(controller.getPackageName()) || state == null) continue;
+                if (!packageName.equals(controller.getPackageName()) || state == null) continue;
                 boolean ready = state.getState() == PlaybackState.STATE_PLAYING
                         || (targetMs == 0 && state.getState() == PlaybackState.STATE_PAUSED);
                 if (ready && state.getPosition() >= 0
@@ -89,16 +95,16 @@ public final class NovaSeek {
                     selected = controller;
                 }
             }
-            if (matches > 1) return outcome("ambiguous_session", false, false, "Multiple Netflix players; no command sent.");
+            if (matches > 1) return outcome("ambiguous_session", false, false, "Multiple matching players; no command sent.");
             if (matches == 1) break;
             if (SystemClock.elapsedRealtime() >= deadline) {
-                return outcome("not_ready", false, false, "No ready Netflix session advertising seek support; no command sent.");
+                return outcome("not_ready", false, false, "No ready matching app session advertising seek support; no command sent.");
             }
             Thread.sleep(250);
         }
         PlaybackState before = selected.getPlaybackState();
-        JSONObject result = outcome("ready", false, false, "Netflix exposes a ready seek-capable media session.");
-        result.put("package", PACKAGE);
+        JSONObject result = outcome("ready", false, false, "The selected app exposes a ready seek-capable media session.");
+        result.put("package", packageName);
         result.put("state_before", before.getState());
         result.put("position_before_ms", position(before));
         if (!seek) return result;
@@ -120,13 +126,13 @@ public final class NovaSeek {
                 result.put("position_after_ms", current);
                 result.put("state_after", after.getState());
                 result.put("play_requested", playRequested);
-                result.put("message", "Netflix reports a playback position within three seconds of the beginning.");
+                result.put("message", "The selected app reports a playback position within three seconds of the beginning.");
                 return result;
             }
             if (SystemClock.elapsedRealtime() >= verifyDeadline) {
                 result.put("status", "seek_unverified");
                 result.put("position_after_ms", current);
-                result.put("message", "Absolute seek was sent but Netflix did not report a position near zero. No UI fallback was used.");
+                result.put("message", "Absolute seek was sent but the selected app did not report a position near zero. No UI fallback was used.");
                 return result;
             }
             Thread.sleep(200);
