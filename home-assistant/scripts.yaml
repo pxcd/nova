@@ -1673,3 +1673,79 @@ restart_current_apple_tv:
           max: 1
           step: 1
           mode: box
+
+resolve_streaming_title:
+  alias: Find a subscribed service for a title
+  description: >-
+    Read-only PH availability lookup for a named title when the user did NOT specify
+    a service. Returns an existing playback tool and arguments; never controls the TV.
+    Pass canonical query and preserve year, media_type, from_start, season and episode.
+    Only call the returned tool when the user requested playback. Explicit-service
+    requests use their existing playback tool directly. Does not search by performer.
+  mode: parallel
+  max: 3
+  fields:
+    query:
+      name: Title
+      required: true
+      selector:
+        text: null
+    year:
+      name: Release year
+      selector:
+        number:
+          min: 1800
+          max: 2200
+          mode: box
+    media_type:
+      name: Content type
+      selector:
+        select:
+          options: [movie, series]
+    from_start:
+      name: From the beginning
+      default: false
+      selector:
+        boolean: null
+    season:
+      name: Season
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    episode:
+      name: Episode
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+  sequence:
+  - variables:
+      routing_payload: >-
+        {% set ns = namespace(value=dict(query=query, from_start=from_start | default(false, true))) %}
+        {% if year is defined and year is not none %}{% set ns.value = dict(ns.value, year=year) %}{% endif %}
+        {% if media_type is defined and media_type is not none %}{% set ns.value = dict(ns.value, media_type=media_type) %}{% endif %}
+        {% if season is defined and season is not none %}{% set ns.value = dict(ns.value, season=season) %}{% endif %}
+        {% if episode is defined and episode is not none %}{% set ns.value = dict(ns.value, episode=episode) %}{% endif %}
+        {{ ns.value }}
+  - action: shell_command.nova_service_routing
+    data:
+      request_payload: '{{ routing_payload }}'
+    response_variable: routing_output
+  - variables:
+      routing_result: '{{ routing_output.get("stdout", "") | from_json({}) }}'
+  - if: >-
+      {{ routing_output.get('returncode', 1) != 0 or routing_result is not mapping
+         or 'status' not in routing_result }}
+    then:
+    - variables:
+        routing_failure:
+          status: failed
+          command_sent: false
+          message: Service lookup failed. No playback command sent; do not infer unavailability.
+    - stop: Service lookup failed.
+      response_variable: routing_failure
+  - stop: Service lookup finished; nothing was played.
+    response_variable: routing_result

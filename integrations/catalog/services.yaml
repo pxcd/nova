@@ -1,0 +1,15 @@
+# User-managed subscriptions, not inferred from installed apps or account logins.
+# Preference is a deterministic tie-breaker; adjust before deployment.
+subscriptions:
+  - netflix
+  - hbo
+  - apple
+  - prime
+preference:
+  - netflix
+  - hbo
+  - apple
+  - prime
+
+# Explicit Kodi requests always bypass subscription routing.
+kodi_fallback: true
