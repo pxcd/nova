@@ -61,7 +61,10 @@ play_netflix_title:
     without Back; expects the desired profile already selected. For a specific series
     episode, pass both positive numeric season and episode. Resolves the episode-level
     Netflix PH link; never substitutes the series resume link when an episode is missing
-    or unavailable. Keep these numbers out of query.'
+    or unavailable. Keep these numbers out of query. For ordinary playback, waits
+    for Netflix foreground and sends a dedicated Play command after a short settling
+    delay. No OK or directional selection is used on this path. Foreground detection
+    does not prove the splash/profile screen is ready; playback remains unverified.'
   mode: single
   fields:
     query:
@@ -333,20 +336,44 @@ play_netflix_title:
             episode is defined else none }}'
     - stop: Netflix start-over request finished.
       response_variable: restart_response
+  - wait_template: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'')
+      == ''com.netflix.ninja'' }}'
+    timeout: 00:00:15
+    continue_on_timeout: true
+  - delay: 00:00:02
+  - if: '{{ not wait.completed or state_attr(''remote.sony_xr_55x90l'', ''current_activity'')
+      != ''com.netflix.ninja'' }}'
+    then:
+    - variables:
+        launch_failure:
+          status: needs_netflix_foreground
+          title: '{{ matches[0].title }}'
+          command_sent: true
+          play_command_sent: false
+          playback_verified: false
+          message: Title link was sent, but Netflix is not confirmed as the foreground
+            app. No Play command was sent.
+    - stop: Netflix not confirmed in foreground.
+      response_variable: launch_failure
+  - action: media_player.media_play
+    target:
+      entity_id: media_player.sony_xr_55x90l_2
   - variables:
       launch_result:
-        status: title_link_sent
+        status: playback_requested
         title: '{{ matches[0].title }}'
         country: PH
         netflix_id: '{{ netflix_ids[0] }}'
         command_sent: true
         playback_verified: false
-        message: Netflix title link sent. Playback and profile selection are not verified.
+        message: Netflix title link and dedicated Play command sent. Playback and
+          profile selection are not independently verified.
         season: '{{ season | int if season is defined else none }}'
         episode: '{{ episode | int if episode is defined else none }}'
         episode_title: '{{ selected_item.get(''title'') if season is defined and episode
           is defined else none }}'
-  - stop: Netflix title link sent.
+        play_command_sent: true
+  - stop: Netflix playback requested.
     response_variable: launch_result
 play_hbo_title:
   alias: Play or open a title on HBO Max
