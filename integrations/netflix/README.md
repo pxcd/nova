@@ -9,7 +9,7 @@ Explicit episodes request `series_granularity=episode` from the existing Streami
 Availability API. The selector matches a unique `Season N` label, selects that
 season's episode by its position in the catalog, and validates the episode's PH
 Netflix subscription link. It launches the episode `/watch/<id>?source=30` link,
-using the existing Home → link sequence. No season-menu key navigation is needed.
+using the Home → link → dedicated Play sequence. No season-menu key navigation is needed.
 Missing numbers, unsupported season labels, out-of-range episodes, movies with
 episode arguments, and absent episode links return an error without TV commands.
 There is no fallback to a series resume link. Catalog projection excludes plots,
@@ -25,9 +25,25 @@ included both numbers; ordinary resume omitted them.
 
 `test_episodes.py` runs inside the HA Python environment with mocked services. It
 checks episode links, input validation, missing availability, reordered seasons,
-oversized catalog data, default resume, and preservation of explicit restart.
+oversized catalog data, normal Play, and preservation of explicit restart.
 
-# Restart option
+## Normal playback
+
+Ordinary title and episode launches send Home → selected link, wait up to 15 seconds
+for Netflix foreground, allow two seconds to settle, then send a dedicated
+`media_player.media_play` through Android TV Remote. No OK or directional selection
+is used. If Netflix is not confirmed in foreground, Play is blocked. Successful
+command delivery returns `playback_requested`, `play_command_sent=true`, and
+`playback_verified=false`.
+
+The user confirmed dedicated Play started Joe Rogan: Burn the Boats after both
+title and watch links had left it on the info/rating screen. The complete updated
+flow still needs an isolated user test: another title request was active during
+the attempted live check. Foreground detection does not identify the loaded title,
+splash screen or profile picker; those timing cases remain best effort. Restart
+requests return through their existing branch before this normal-play step.
+
+## Restart option
 
 `script.play_netflix_title` adds a default-off boolean `from_start`. Normal playback sends the same catalog-selected title link as before. For restart, the script waits two seconds, then its hidden helper selects the row below Resume directly on the freshly opened title page, before idle autoplay/resume. It never presses Back.
 
@@ -35,4 +51,4 @@ Netflix can autoplay from its title page. The old eight-second wait plus Back co
 
 This is a timed Sony Netflix UI sequence, not a seek API. It assumes the desired profile is selected, the requested title page is ready after the delay, and the initial Resume button is focused. The foreground-app check prevents acting in a different app but cannot verify the title or timestamp. `restart_requested` is not independently verified zero-position playback. The helper keeps its legacy internal entity ID `script.netflix_restart_from_playback` and stays hidden from Assist.
 
-The HA-runtime test mocks all services and verifies unchanged normal playback, direct title-page restart with no Back, wrong-app rejection and catalog failure. Restarting an episode never means starting the whole series at S01E01.
+The HA-runtime test mocks all services and verifies normal dedicated Play and its foreground guard, direct title-page restart with no Back, wrong-app rejection and catalog failure. Restarting an episode never means starting the whole series at S01E01.
