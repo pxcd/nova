@@ -49,22 +49,15 @@ select_netflix_paolo_profile:
       command: DPAD_CENTER
 play_netflix_title:
   alias: Play a show or movie on Netflix
-  description: 'Find a named movie or show on Netflix in the Philippines and send
-    its title link to the living room Sony TV. For watch/play requests with a content
-    title, use this instead of the plain Netflix launcher. Pass only the title in
-    query. Always send a fresh command, including repeated requests. Reports whether
-    the command was sent, not whether playback actually started. Availability data
-    provided by Streaming Availability API by Movie of the Night: https://www.movieofthenight.com/about/api
-    Returns to Google TV home before sending the title link so Netflix handles it
-    when already open. Set from_start=true only for explicit restart/from-the-beginning
-    requests. Selects the freshly opened title page restart option before idle autoplay,
-    without Back; expects the desired profile already selected. For a specific series
-    episode, pass both positive numeric season and episode. Resolves the episode-level
-    Netflix PH link; never substitutes the series resume link when an episode is missing
-    or unavailable. Keep these numbers out of query. For ordinary playback, waits
-    for Netflix foreground and sends a dedicated Play command after a short settling
-    delay. No OK or directional selection is used on this path. Foreground detection
-    does not prove the splash/profile screen is ready; playback remains unverified.'
+  description: 'Find a named movie or series on Netflix in the Philippines and launch
+    its verified subscription link on the Sony. Keep only the canonical title in query;
+    pass both season and episode for a specific episode. Always send a fresh command
+    for repeated requests. Ordinary playback uses the normal link and dedicated Play
+    sequence. Set from_start=true only for explicit start-over requests: starts the
+    requested title, waits for a fresh active Netflix playing session, then sends
+    Pause, Back twice, Down and OK. Profile selection, screen focus and zero-position
+    playback are not independently verified. Do not send independent rewind, Back
+    or extra OK commands after this tool.'
   mode: single
   fields:
     query:
@@ -313,30 +306,8 @@ play_netflix_title:
     data:
       media_content_type: url
       media_content_id: https://www.netflix.com/{{ 'watch' if (season is defined and
-        episode is defined) or (matches[0].get('showType') == 'movie' and not (from_start
-        | default(false))) else 'title' }}/{{ netflix_ids[0] }}?source=30
-  - if: '{{ from_start | default(false) }}'
-    then:
-    - delay: 00:00:02
-    - action: script.netflix_restart_from_playback
-      response_variable: restart_outcome
-    - variables:
-        restart_response:
-          status: '{{ restart_outcome.status }}'
-          title: '{{ matches[0].title }}'
-          country: PH
-          netflix_id: '{{ netflix_ids[0] }}'
-          command_sent: true
-          from_start: true
-          playback_verified: false
-          restart_verified: false
-          message: '{{ restart_outcome.message }}'
-          season: '{{ season | int if season is defined else none }}'
-          episode: '{{ episode | int if episode is defined else none }}'
-          episode_title: '{{ selected_item.get(''title'') if season is defined and
-            episode is defined else none }}'
-    - stop: Netflix start-over request finished.
-      response_variable: restart_response
+        episode is defined) or matches[0].get('showType') == 'movie' else 'title'
+        }}/{{ netflix_ids[0] }}?source=30
   - wait_template: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'')
       == ''com.netflix.ninja'' }}'
     timeout: 00:00:15
@@ -359,6 +330,28 @@ play_netflix_title:
   - action: media_player.media_play
     target:
       entity_id: media_player.sony_xr_55x90l_2
+  - if: '{{ from_start | default(false) }}'
+    then:
+    - action: script.netflix_restart_from_playback
+      response_variable: restart_outcome
+    - variables:
+        restart_response:
+          status: '{{ restart_outcome.status }}'
+          title: '{{ matches[0].title }}'
+          country: PH
+          netflix_id: '{{ netflix_ids[0] }}'
+          command_sent: true
+          from_start: true
+          playback_verified: false
+          restart_verified: false
+          message: '{{ restart_outcome.message }}'
+          season: '{{ season | int if season is defined else none }}'
+          episode: '{{ episode | int if episode is defined else none }}'
+          episode_title: '{{ selected_item.get(''title'') if season is defined and
+            episode is defined else none }}'
+          play_command_sent: true
+    - stop: Netflix start-over request finished.
+      response_variable: restart_response
   - variables:
       launch_result:
         status: playback_requested
@@ -1140,10 +1133,10 @@ confirm_prime_video_selection:
   - stop: Prime selection confirmed.
     response_variable: confirmation
 netflix_restart_from_playback:
-  alias: Netflix restart from freshly opened title page (internal)
-  description: Internal Sony Netflix title-page sequence. Called immediately after
-    opening the requested title; selects Continue from the beginning before idle autoplay.
-    Never sends Back.
+  alias: Netflix restart after active playback (internal)
+  description: Internal Sony Netflix restart sequence. Called after the requested
+    title link and dedicated Play. Requires fresh active Netflix playing state before
+    Pause, Back twice, Down and OK. UI focus and playback position remain unverified.
   mode: single
   sequence:
   - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
@@ -1154,8 +1147,81 @@ netflix_restart_from_playback:
           status: needs_netflix_playback
           command_sent: false
           restart_verified: false
-          message: Netflix is not the foreground app. No restart selection was sent.
-    - stop: Netflix playback required.
+          message: Netflix is not the foreground app. No restart navigation was sent.
+    - stop: Netflix foreground required.
+      response_variable: restart_result
+  - variables:
+      netflix_ready: false
+  - repeat:
+      sequence:
+      - action: androidtv.adb_command
+        target:
+          entity_id: media_player.android_tv_10_0_0_174
+        data:
+          command: printf 'NOVA_NETFLIX_PLAYER_{{ context.id }}\n'; dumpsys media_session
+            | awk '/^[[:space:]]*package=/{n=($0 ~ /package=com[.]netflix[.]ninja[[:space:]]*$/);
+            a=0} n && /^[[:space:]]*active=true/{a=1} n && a && /state=PlaybackState/{print;
+            exit}'
+      - variables:
+          netflix_ready: '{% set response = state_attr(''media_player.android_tv_10_0_0_174'',
+            ''adb_response'') | default('''', true) %}{{ (''NOVA_NETFLIX_PLAYER_''
+            ~ context.id) in response and response | regex_search(''state=PlaybackState
+            \{state=3,'') }}'
+      - if: '{{ not netflix_ready }}'
+        then:
+        - delay: 00:00:01
+      until:
+      - condition: template
+        value_template: '{{ netflix_ready or repeat.index >= 8 or state_attr(''remote.sony_xr_55x90l'',
+          ''current_activity'') != ''com.netflix.ninja'' }}'
+  - if: '{{ not netflix_ready }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: false
+          restart_verified: false
+          message: Netflix did not report active playing state in this run. No Pause,
+            Back or restart selection was sent; the title may still be loading or
+            waiting for a profile.
+    - stop: Netflix playing state not ready.
+      response_variable: restart_result
+  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: false
+          restart_verified: false
+          message: Netflix is not the foreground app. No restart navigation was sent.
+    - stop: Netflix foreground required.
+      response_variable: restart_result
+  - action: media_player.media_pause
+    target:
+      entity_id: media_player.sony_xr_55x90l_2
+  - delay:
+      milliseconds: 700
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command:
+      - BACK
+      - BACK
+      delay_secs: 1
+  - delay:
+      milliseconds: 700
+  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: false
+          restart_verified: false
+          message: Netflix is not the foreground app. No restart navigation was sent.
+    - stop: Netflix foreground required.
       response_variable: restart_result
   - action: remote.send_command
     target:
@@ -1170,10 +1236,10 @@ netflix_restart_from_playback:
         status: restart_requested
         command_sent: true
         restart_verified: false
-        message: Selected Continue from the beginning directly on the newly opened
-          Netflix title page before idle autoplay. No Back command was sent. Title/position
-          cannot be independently verified.
-  - stop: Netflix title-page restart requested.
+        message: After Netflix reported active playback, sent Pause, Back twice, then
+          Down and OK to request Continue from the beginning. Title-page focus and
+          zero-position playback are not independently verified.
+  - stop: Netflix restart sequence requested.
     response_variable: restart_result
 force_quit_tv_app:
   alias: Force quit a TV media app
