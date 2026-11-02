@@ -20,3 +20,5 @@ adbkey.pub
 *.srl
 *.p12
 *.pfx
+
+.nova_catalog_cache/

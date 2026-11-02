@@ -63,3 +63,7 @@ Restart means the selected movie or current episode, not the first episode of a 
 Say “Force quit Prime Video,” “Force stop Netflix,” or “Kill the Kodi app.” `script.force_quit_tv_app` is limited to Netflix, HBO Max, Prime Video, Apple TV and Kodi, and verifies the app main process stopped. It does not clear app data. This is distinct from restarting a movie/episode from the beginning. The Netflix start-over path now selects Restart directly before the title-page autoplay countdown; it no longer presses Back into the prior title's page.
 
 GPT-OSS adds one brief, title-specific, spoiler-free quip after successful action requests. The prompt favors dry wit and understatement, avoids factual trivia claims, and uses title-based wordplay or skips the joke for unfamiliar titles. No extra lookup or inference call is added.
+
+## Netflix performer discovery
+
+“Play me an Adam Sandler movie on Netflix” and “Play a Jo Koy special on Netflix” now use a read-only discovery tool before playback. It verifies cast credits and PH subscription links, then chooses from verified candidates when asked to pick one. Recommendation/list requests return options without playing them. Searches are bounded and cached; an incomplete search does not mean no matching titles exist. See `integrations/catalog/README.md`.

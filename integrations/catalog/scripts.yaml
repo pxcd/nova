@@ -1,0 +1,60 @@
+find_netflix_by_performer:
+  alias: Find Netflix movies or specials by performer
+  description: Read-only discovery for actor or comedian requests on Netflix in the
+    Philippines. Use this before choosing a movie, special, or series by a performer;
+    do not guess titles with the playback tool. Checks cast credits and Netflix PH
+    subscription links. content_kind=movie excludes likely performer-titled/stand-up
+    specials; use special for comedians' stand-up shows. choose_random=true returns
+    one selected candidate from the verified pool, but NEVER plays it. Only call a
+    playback tool afterward if the user asked to play. Results may be cached and incomplete;
+    search_incomplete does not mean no titles are available. Do not invent candidates.
+  mode: parallel
+  max: 3
+  fields:
+    performer:
+      name: Performer
+      description: Canonical full actor or comedian name, not a guessed film title.
+      required: true
+      selector:
+        text: null
+    content_kind:
+      name: Content kind
+      default: movie
+      selector:
+        select:
+          options:
+          - movie
+          - special
+          - series
+    choose_random:
+      name: Choose a random candidate
+      description: Select from the verified pool when the user asks you to pick/play
+        one. Does not start playback.
+      default: false
+      selector:
+        boolean: null
+  sequence:
+  - variables:
+      discovery_payload:
+        performer: '{{ performer }}'
+        content_kind: '{{ content_kind | default("movie") }}'
+        choose_random: '{{ choose_random | default(false) }}'
+  - action: shell_command.nova_catalog_discovery
+    data:
+      request_payload: '{{ discovery_payload }}'
+    response_variable: discovery_output
+  - variables:
+      discovery_result: '{{ discovery_output.get("stdout", "") | from_json({}) }}'
+  - if: '{{ discovery_output.get("returncode", 1) != 0 or discovery_result is not
+      mapping or "status" not in discovery_result }}'
+    then:
+    - variables:
+        discovery_failure:
+          status: failed
+          command_sent: false
+          message: Performer discovery failed. No playback command was sent. Do not
+            infer that no titles exist.
+    - stop: Performer discovery failed.
+      response_variable: discovery_failure
+  - stop: Performer discovery finished; nothing was played.
+    response_variable: discovery_result
