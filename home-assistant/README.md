@@ -19,3 +19,8 @@ This snapshot does not contain automatic installation or deployment tooling. In 
 `pipelines.json` records the current Assist pipelines, including GPT-OSS and Qwen3 4B. `qwen3-4b.json` describes the separate Qwen agent on the same LM Studio server. Apple FM was removed from live HA; its former connection reference is archived under `../experiments/apple-fm/`. Netflix, HBO and Prime title tools now accept `from_start`; keep the internal Netflix restart helper hidden. Apple TV+ restart is postponed.
 
 Netflix performer discovery uses the existing catalog API secret through `shell_command.nova_catalog_discovery`. It never controls the TV. Its generated `/config/.nova_catalog_cache/` is disposable metadata, not restore configuration; do not version it. See `../integrations/catalog/README.md` for bounds and tests.
+
+Service-free named-title playback uses automatic subscription routing with a configured Kodi POV fallback.
+Its read-only resolver, local subscription/preference configuration and deployment
+steps are described in `../integrations/catalog/README.md`. No JustWatch account
+connection is needed. Existing explicit-service tools are unchanged.

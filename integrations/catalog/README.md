@@ -78,3 +78,58 @@ a Netflix PH subscription link in the first sixty checked catalog entries, plus
 six Jo Koy specials via performer title search. The actual exposed HA script
 returned six Jo Koy options and a selected title using its cache with zero new API
 requests. No playback was performed by these discovery checks.
+
+## Automatic service selection
+
+`script.resolve_streaming_title` is a read-only tool for named-title play requests
+without an explicit service. It makes one uncached PH title-search request with a
+12-second timeout using the existing catalog key, then intersects subscription
+offers with a local allowlist. It does not log into JustWatch or streaming accounts,
+verify subscription entitlement, send TV commands, or search by performer.
+
+`services.yaml` lists Netflix, HBO Max, Apple TV+ and Prime Video, with that order as
+the initial tie-breaker. Confirm/edit subscriptions and preference before deployment;
+installed/signed-in apps are not proof of a current subscription. The catalog IDs
+are `netflix`, `hbo`, `apple`, `prime`; both lists must contain the same unique IDs.
+No rental, purchase, extra channel or other-country offer is selected. With `kodi_fallback: true`, a uniquely resolved title with no configured subscription offer routes to Kodi POV. Explicit Kodi requests always bypass subscription routing. Series fallback requires explicit season and episode; lookup errors, ambiguity, missing titles and unsupported settings do not trigger fallback. The resolver does not verify POV source availability or start playback itself.
+
+An exact title (or original title) is required. Remakes/movie-series collisions
+require title/year/type clarification even when only one version has an eligible
+offer. A clear STT correction can use returned catalog candidates once. Matching is
+conservative: different localized titles cannot always be inferred automatically.
+No match or a failed search never authorizes guessed playback.
+
+The selected result contains the existing Assist playback tool name and arguments.
+The agent calls that tool only for an authorized play request; it performs its own
+fresh lookup. An unavailable/failed playback result stops the request rather than
+trying another provider blindly. Explicit-service requests bypass routing, keeping
+their current playback paths. The separate Netflix performer flow stays unchanged.
+
+Requested settings are preserved: numbered episodes route only to Netflix, which is
+the only configured streaming tool with numbered-episode support. Combined Netflix play/restart is unsupported; current-player restart for Netflix, HBO, Prime and Apple TV+ is handled separately by dedicated seek tools. The resolver selects the first eligible service supporting the settings,
+or returns `unsupported_request`. Netflix/HBO cannot accept a release-year filter,
+so same-name versions available on the same service are refused even after year
+clarification rather than risking the wrong remake. No playback ID or URL is passed
+from the resolver to a device.
+
+Deployment:
+
+1. Copy `routing.py` to `/config/nova_service_routing.py` and the edited
+   `services.yaml` to `/config/nova_services.yaml`.
+2. Merge `resolve_streaming_title` from `scripts.yaml` and
+   `nova_service_routing` from `home-assistant/shell_commands.yaml` into HA's existing
+   includes. Do not replace unrelated scripts or secrets.
+3. Validate/reload HA configuration, expose only the public resolver to Assist,
+   and apply the updated `home-assistant/agent-settings.json` prompt to GPT-OSS.
+4. Test service-free requests and explicit-service regressions on the TV. The deployed resolver selected Netflix for a service-free Hubie Halloween request from Google TV Home, and playback was visually confirmed. Kodi fallback was verified with a read-only Firefly S1E1 lookup and model routing checks; explicit Kodi requests bypassed the resolver. Optional null argument handling is covered by the HA-runtime wrapper test.
+
+Local checks:
+
+```sh
+python3 -m unittest discover -s integrations/catalog -p test_routing.py
+python3 -m unittest discover -s integrations/catalog -p test_discovery.py
+```
+
+`test_routing_script.py` is the optional HA-runtime wrapper check. Run it inside
+HA with `NOVA_CATALOG_SCRIPTS_PATH` pointing to the staged catalog scripts. Shell
+responses are mocked; it does not register or call TV services.

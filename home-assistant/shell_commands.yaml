@@ -1,3 +1,4 @@
 nova_pov_request: python3 /config/nova_pov.py '{{ request_payload | to_json | base64_encode
   }}'
 nova_catalog_discovery: python3 /config/nova_catalog.py '{{ request_payload | to_json | base64_encode }}'
+nova_service_routing: python3 /config/nova_service_routing.py '{{ request_payload | to_json | base64_encode }}'
