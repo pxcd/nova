@@ -1,0 +1,101 @@
+restart_current_netflix:
+  alias: Restart the currently playing Netflix video
+  description: Instantly restart ONLY the currently playing Netflix movie or current
+    episode by an absolute seek to one second. Pass position_seconds=1; no title/query
+    arguments. No title lookup, relaunch, Home, Back, directional keys, OK, or rewind
+    holds. Netflix must already be foreground and playing. Use as a separate command
+    after normal playback, for example restart what is playing on Netflix. This cannot
+    choose a title or identify its name. Do not use to restart a different named movie.
+    Reports restart_confirmed only when the same Netflix session reports a position
+    within three seconds of the beginning. If unavailable or unverified, do not try
+    menu navigation or retries.
+  mode: single
+  sequence:
+  - if: '{{ position_seconds is defined and (position_seconds is not number or position_seconds
+      is boolean or position_seconds != 1) }}'
+    then:
+    - variables:
+        restart_result:
+          status: invalid_position
+          command_sent: false
+          restart_verified: false
+          message: Only the one-second instant-restart target is supported. No seek
+            command was sent.
+    - stop: Invalid instant restart target.
+      response_variable: restart_result
+  - if: '{{ state_attr("remote.sony_xr_55x90l", "current_activity") != "com.netflix.ninja"
+      }}'
+    then:
+    - variables:
+        restart_result:
+          status: needs_netflix_playback
+          command_sent: false
+          restart_verified: false
+          message: Netflix must already be foreground and playing. Nothing was restarted
+            or launched.
+    - stop: Playing Netflix video required.
+      response_variable: restart_result
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: printf 'NOVA_CURRENT_RESTART_{{ context.id }}\n'; CLASSPATH=/data/local/tmp/nova-seek.jar
+        app_process /system/bin NovaSeek seek-one-second
+  - variables:
+      seek_output: '{{ state_attr("media_player.android_tv_10_0_0_174", "adb_response")
+        | default("", true) }}'
+  - if: '{{ ("NOVA_CURRENT_RESTART_" ~ context.id) not in seek_output }}'
+    then:
+    - variables:
+        restart_result:
+          status: unverified_restart
+          command_sent: true
+          restart_verified: false
+          message: Seek requested but no fresh helper result was received. Do not
+            claim success or retry. No UI fallback was sent.
+    - stop: Fresh seek result unavailable.
+      response_variable: restart_result
+  - variables:
+      seek_lines: '{{ seek_output | regex_findall("(?m)^NOVA_SEEK_RESULT=(.*)$") }}'
+  - variables:
+      seek_result: '{{ (seek_lines[0] | from_json({})) if seek_lines | count == 1
+        else {} }}'
+  - if: '{{ seek_result is not mapping }}'
+    then:
+    - variables:
+        seek_result: {}
+  - variables:
+      verified: "{{ seek_result.get('status') == 'seek_confirmed'\n   and seek_result.get('package')\
+        \ == 'com.netflix.ninja'\n   and seek_result.get('state_before') == 3\n  \
+        \ and seek_result.get('target_position_ms') == 1000\n   and seek_result.get('command_sent')\
+        \ == true\n   and seek_result.get('seek_verified') == true\n   and seek_result.get('position_after_ms')\
+        \ is number\n   and 0 <= seek_result.get('position_after_ms') <= 3000 }}"
+  - variables:
+      restart_result:
+        status: '{{ "restart_confirmed" if verified else ("needs_netflix_playback"
+          if seek_result.get("status") == "not_ready" else "unverified_restart") }}'
+        command_sent: '{{ seek_result.get("command_sent", true) }}'
+        restart_verified: '{{ verified }}'
+        playback_verified: '{{ verified and seek_result.get("state_after") == 3 }}'
+        target_position_seconds: 1
+        position_after_ms: '{{ seek_result.get("position_after_ms") }}'
+        message: '{{ "The current Netflix session reports a position within three
+          seconds of the beginning after an absolute seek to one second." if verified
+          else "Instant restart was not confirmed. Netflix must already be playing
+          and the seek helper must be installed. No relaunch or UI fallback was used;
+          do not retry automatically." }}'
+  - stop: Current Netflix restart finished.
+    response_variable: restart_result
+  fields:
+    position_seconds:
+      name: Target position (seconds)
+      description: The supported instant-restart target is exactly 1 second. Always
+        pass 1; no title arguments.
+      required: true
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 1
+          step: 1
+          mode: box

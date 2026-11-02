@@ -54,13 +54,23 @@ The Apple FM provider/pipeline was removed from live HA and its compatibility br
 
 ## Start a movie or episode over
 
-Netflix, HBO Max and Prime Video title tools accept a default-off `from_start` boolean. For example: “Play White Chicks on Netflix from the start,” “Play Game of Thrones on HBO from the beginning,” or “Play Fallout on Prime Video from the start.” Regular play/resume requests keep their previous behavior. A recent, unambiguous title/service can supply context for “start this over”; otherwise NOVA asks which title/service.
+Netflix play and restart are separate commands: “Play Hubie Halloween on Netflix,”
+then “Restart what is playing on Netflix.” `script.restart_current_netflix` seeks
+the current active Netflix video to one second and confirms a reported position
+within three seconds of the beginning. It requires Netflix foreground and already
+playing; it does not choose/identify a title or relaunch the app. No menu keys,
+rewind holds or UI fallback are used. Combined Netflix `from_start=true` requests
+are disabled before any TV commands. See `integrations/tv_seek/README.md`.
 
-Restart means the selected movie or current episode, not the first episode of a series. These paths use each app’s tested Sony UI controls and do not independently measure playback position. Netflix expects the desired profile already selected; it starts the requested title, waits for fresh active playback, then uses Pause → Back → Back → Down → OK. HBO establishes a cold app/profile launch before choosing Resume or Restart. Prime uses its configured highlighted-profile step and selects the circular-arrow icon with Up then OK. No ad-skipping commands are sent. Apple TV+ restart is postponed. See the provider integration notes for UI/timing assumptions.
+HBO Max and Prime Video retain their default-off `from_start` title-tool option,
+for example “Play Game of Thrones on HBO from the beginning.” These use their tested
+profile/UI sequences and do not independently verify zero-position playback.
+Ordinary play/resume keeps false. Restart means the selected movie/current episode,
+not season one episode one. Apple TV+ start-over remains unsupported.
 
 ## Force quit a TV app
 
-Say “Force quit Prime Video,” “Force stop Netflix,” or “Kill the Kodi app.” `script.force_quit_tv_app` is limited to Netflix, HBO Max, Prime Video, Apple TV and Kodi, and verifies the app main process stopped. It does not clear app data. This is distinct from restarting a movie/episode from the beginning. The Netflix start-over path first activates the requested title, then uses its state-gated restart sequence; it does not send restart controls during ordinary playback.
+Say “Force quit Prime Video,” “Force stop Netflix,” or “Kill the Kodi app.” `script.force_quit_tv_app` is limited to Netflix, HBO Max, Prime Video, Apple TV and Kodi, and verifies the app main process stopped. It does not clear app data. This is distinct from restarting a movie/episode from the beginning. Netflix restart is a separate, current-player seek operation; ordinary playback never invokes it.
 
 GPT-OSS adds one brief, title-specific, spoiler-free quip after successful action requests. The prompt favors dry wit and understatement, avoids factual trivia claims, and uses title-based wordplay or skips the joke for unfamiliar titles. No extra lookup or inference call is added.
 

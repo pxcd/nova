@@ -20,15 +20,15 @@ public final class NovaSeek {
         try {
             String operation = args.length == 0 ? "inspect" : args[0];
             int waitSeconds = args.length < 2 ? 0 : Integer.parseInt(args[1]);
-            if ((!operation.equals("inspect") && !operation.equals("seek-zero"))
+            if ((!operation.equals("inspect") && !operation.equals("seek-zero") && !operation.equals("seek-one-second"))
                     || waitSeconds < 0 || waitSeconds > 45 || args.length > 2) {
-                throw new IllegalArgumentException("Usage: NovaSeek inspect|seek-zero [wait-seconds:0..45]");
+                throw new IllegalArgumentException("Usage: NovaSeek inspect|seek-zero|seek-one-second [wait-seconds:0..45]");
             }
             if (Looper.getMainLooper() == null) Looper.prepareMainLooper();
             Context context = shellContext();
             initializeMediaServices();
             MediaSessionManager manager = (MediaSessionManager) context.getSystemService(Context.MEDIA_SESSION_SERVICE);
-            result = run(manager, operation.equals("seek-zero"), waitSeconds);
+            result = run(manager, !operation.equals("inspect"), waitSeconds, operation.equals("seek-one-second") ? 1000 : 0);
         } catch (Throwable error) {
             while (error instanceof InvocationTargetException && error.getCause() != null) error = error.getCause();
             result = new JSONObject();
@@ -72,7 +72,7 @@ public final class NovaSeek {
         }
     }
 
-    private static JSONObject run(MediaSessionManager manager, boolean seek, int waitSeconds) throws Exception {
+    private static JSONObject run(MediaSessionManager manager, boolean seek, int waitSeconds, long targetMs) throws Exception {
         long deadline = SystemClock.elapsedRealtime() + waitSeconds * 1000L;
         MediaController selected = null;
         while (true) {
@@ -82,7 +82,7 @@ public final class NovaSeek {
                 PlaybackState state = controller.getPlaybackState();
                 if (!PACKAGE.equals(controller.getPackageName()) || state == null) continue;
                 boolean ready = state.getState() == PlaybackState.STATE_PLAYING
-                        || state.getState() == PlaybackState.STATE_PAUSED;
+                        || (targetMs == 0 && state.getState() == PlaybackState.STATE_PAUSED);
                 if (ready && state.getPosition() >= 0
                         && (state.getActions() & PlaybackState.ACTION_SEEK_TO) != 0) {
                     matches++;
@@ -105,7 +105,8 @@ public final class NovaSeek {
 
         MediaController.TransportControls controls = selected.getTransportControls();
         commandSent = true;
-        controls.seekTo(0);
+        result.put("target_position_ms", targetMs);
+        controls.seekTo(targetMs);
         result.put("command_sent", true);
         long verifyDeadline = SystemClock.elapsedRealtime() + 5000;
         while (true) {
@@ -117,6 +118,7 @@ public final class NovaSeek {
                 result.put("status", "seek_confirmed");
                 result.put("seek_verified", true);
                 result.put("position_after_ms", current);
+                result.put("state_after", after.getState());
                 result.put("play_requested", playRequested);
                 result.put("message", "Netflix reports a playback position within three seconds of the beginning.");
                 return result;
@@ -124,7 +126,7 @@ public final class NovaSeek {
             if (SystemClock.elapsedRealtime() >= verifyDeadline) {
                 result.put("status", "seek_unverified");
                 result.put("position_after_ms", current);
-                result.put("message", "Seek-to-zero was sent but Netflix did not report a position near zero. No UI fallback was used.");
+                result.put("message", "Absolute seek was sent but Netflix did not report a position near zero. No UI fallback was used.");
                 return result;
             }
             Thread.sleep(200);

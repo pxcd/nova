@@ -25,7 +25,7 @@ async def main():
  async def run(**args):calls.clear();lookups.clear();return(await script.async_run({'query':'Brooklyn Nine-Nine',**args},Context())).service_response
  r=await run();assert r['status']=='playback_requested';assert '/title/' in calls[-2][2]['media_content_id'];assert lookups[0]['series_granularity']=='show';assert calls[-1][1]=='media_play'
  r=await run(season=1,episode=2);assert r['season']==1 and r['episode']==2 and r['episode_title']=='The Tagger';assert calls[-2][2]['media_content_id']=='https://www.netflix.com/watch/80004162?source=30';assert lookups[0]['series_granularity']=='episode';assert calls[-1][1]=='media_play'
- r=await run(season=1,episode=2,from_start=True);assert r['status']=='restart_requested' and calls[-1][:2]==('script','restart')
+ r=await run(season=1,episode=2,from_start=True);assert r['status']=='unsupported_restart' and not calls and not lookups
  for args,status in [({'season':1},'needs_episode'),({'episode':2},'needs_episode'),({'season':True,'episode':1},'invalid_episode'),({'season':1,'episode':1.5},'invalid_episode'),({'season':'1','episode':2},'invalid_episode'),({'season':0,'episode':1},'invalid_episode')]:
   r=await run(**args);assert r['status']==status,(args,r);assert not calls and not lookups
  r=await run(season=99,episode=1);assert r['status']=='unavailable' and not calls
@@ -33,5 +33,5 @@ async def main():
  content[0]['seasons'].reverse();r=await run(season=1,episode=2);assert r['episode_title']=='The Tagger'
  season=next(s for s in content[0]['seasons'] if s['title']=='Season 1');season['episodes'][1]['streamingOptions']={};r=await run(season=1,episode=2);assert r['status']=='unavailable' and not calls
  content[0]['showType']='movie';r=await run(season=1,episode=2);assert r['status']=='invalid_episode' and not calls
- print('PASS ordinary resume preserved; S1E2 resolves episode ID; explicit restart preserved; missing/invalid inputs, absent seasons/episodes/provider links and movies blocked without TV commands; season labels tolerate reordered arrays. All TV services mocked.')
+ print('PASS ordinary resume preserved; S1E2 resolves episode ID; disabled restart sends no commands; missing/invalid inputs, absent seasons/episodes/provider links and movies blocked without TV commands; season labels tolerate reordered arrays. All TV services mocked.')
 asyncio.run(main())

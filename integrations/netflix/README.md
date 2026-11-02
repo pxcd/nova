@@ -30,7 +30,7 @@ oversized catalog data, normal Play, and preservation of explicit restart.
 ## Normal playback
 
 Ordinary movie and explicit episode launches use `/watch/<id>?source=30`. Series
-resume retains `/title/<id>?source=30`; movie start-over also uses the watch link. All ordinary
+resume retains `/title/<id>?source=30`. All ordinary
 launches send Home → selected link, wait up to 15 seconds
 for Netflix foreground, allow two seconds to settle, then send a dedicated
 `media_player.media_play` through Android TV Remote. No OK or directional selection
@@ -46,40 +46,27 @@ request through the complete shared script switched away from Uncut Gems; the
 user confirmed playback. Performer selection and exact-title requests use this
 same launch path. Foreground detection does not identify the loaded title,
 splash screen or profile picker; those timing cases remain best effort. Restart
-requests run their helper after this shared launch and Play step.
+is handled by the separate current-player tool, not this launch sequence.
 
-## Restart option
+## Restart is a separate current-player command
 
-`from_start=true` first launches the requested title through the same link and
-Play sequence as ordinary playback. Movies and explicit episodes use watch links;
-series resume uses its normal title link. This avoids relying on a freshly opened
-title page while a prior player is still active.
+Play normally first, then say “Restart what is playing on Netflix.” The separate
+`script.restart_current_netflix` uses an absolute seek to one second on an already
+playing Netflix session. It never launches a title or uses menu navigation. See
+`../tv_seek/README.md` for its source, deployment and verification requirements.
 
-The hidden `script.netflix_restart_from_playback` then queries `dumpsys media_session`
-through ADB up to eight times, with a one-second delay between unsuccessful reads
-plus ADB round-trip overhead. A per-run marker rejects stale responses; the shell
-filter returns only an active Netflix session. Only reported playing state 3
-allows navigation. Missing/inactive sessions, paused state, stale responses, and
-loss of Netflix foreground return `needs_netflix_playback` without restart keys.
-The Sony's existing `awk` utility was checked; no helper APK or seek API is needed.
+The retained `from_start=true` argument returns `unsupported_restart` before any
+catalog lookup or TV command. It cannot combine a named-title launch and restart.
+The old `script.netflix_restart_from_playback` helper is disabled and hidden.
+Normal play and episode selection keep their existing behavior.
 
-After readiness, the helper sends dedicated Pause → waits 700 ms → Back twice
-(one second apart) → waits 700 ms → Down → OK. A foreground check before the final
-selection blocks it if navigation left Netflix. The two Back presses were tested:
-the first left Hubie Halloween paused; the second returned to its movie page with
-Resume highlighted. The full updated from-start tool then ran, and Paolo confirmed
-Hubie Halloween restarted from the beginning on 2026-11-02.
+The old Pause/Back/Down/OK fallback passed one Hubie test but failed on the next:
+two Back presses landed on Netflix's home/Continue Watching menu, so selection
+acted on the wrong screen. It is not exposed as a fallback. A current-only rewind
+hold worked but was too slow. Direct seek to zero was ignored; the later one-second
+seek was confirmed near the beginning by the media session and the user.
 
-Ordinary playback sends no readiness queries, Pause, Back, or restart selection.
-The HA-runtime tests mock all device services and check exact normal/restart
-control order, unchanged movie/series/episode selection, stale/nonplaying/wrong-app
-blocking, and failed lookups.
-
-This remains a timed UI fallback. The desired profile must be selected, Back must
-return to a title page with Resume focused, and the next row must be Continue from
-the beginning. Media-session state does not expose the actual title or identify
-the info screen. Cold launches/profile gates and UI-layout changes remain
-unverified. `restart_requested` means the sequence was sent, while
-`restart_verified=false` explicitly means zero-position playback was not measured
-by the script. The agent says “Restart requested” rather than asserting confirmed
-playback from zero. The helper remains hidden from Assist.
+HA regression tests check that combined restart and the legacy helper send no
+lookup or device commands; ordinary movies, series resume and explicit episodes
+continue to use their existing link/Play sequence. The new current-player tool has
+its own mocked transport tests and live checks.
