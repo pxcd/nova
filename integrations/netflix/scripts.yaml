@@ -8,8 +8,8 @@ play_netflix_title:
     provided by Streaming Availability API by Movie of the Night: https://www.movieofthenight.com/about/api
     Returns to Google TV home before sending the title link so Netflix handles it
     when already open. Set from_start=true only for explicit restart/from-the-beginning
-    requests. Uses the tested Netflix playback menu; expects the desired profile already
-    selected.'
+    requests. Selects the freshly opened title page restart option before idle autoplay,
+    without Back; expects the desired profile already selected.'
   mode: single
   fields:
     query:
@@ -119,7 +119,7 @@ play_netflix_title:
       media_content_id: https://www.netflix.com/title/{{ netflix_ids[0] }}?source=30
   - if: '{{ from_start | default(false) }}'
     then:
-    - delay: 00:00:08
+    - delay: 00:00:02
     - action: script.netflix_restart_from_playback
       response_variable: restart_outcome
     - variables:
@@ -147,9 +147,10 @@ play_netflix_title:
   - stop: Netflix title link sent.
     response_variable: launch_result
 netflix_restart_from_playback:
-  alias: Netflix restart from active playback (internal)
-  description: Internal tested Sony Netflix sequence. Requires active Netflix playback;
-    never use on a profile picker or browsing page.
+  alias: Netflix restart from freshly opened title page (internal)
+  description: Internal Sony Netflix title-page sequence. Called immediately after
+    opening the requested title; selects Continue from the beginning before idle autoplay.
+    Never sends Back.
   mode: single
   sequence:
   - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
@@ -160,26 +161,8 @@ netflix_restart_from_playback:
           status: needs_netflix_playback
           command_sent: false
           restart_verified: false
-          message: Netflix is not the foreground app. No restart command was sent.
+          message: Netflix is not the foreground app. No restart selection was sent.
     - stop: Netflix playback required.
-      response_variable: restart_result
-  - action: remote.send_command
-    target:
-      entity_id: remote.sony_xr_55x90l
-    data:
-      command: BACK
-  - delay: 00:00:01
-  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
-      }}'
-    then:
-    - variables:
-        restart_result:
-          status: needs_netflix_playback
-          command_sent: true
-          restart_verified: false
-          message: Netflix exited instead of opening the playback title menu. No restart
-            option was selected.
-    - stop: Netflix restart menu unavailable.
       response_variable: restart_result
   - action: remote.send_command
     target:
@@ -194,7 +177,8 @@ netflix_restart_from_playback:
         status: restart_requested
         command_sent: true
         restart_verified: false
-        message: Selected Netflix Continue from the beginning, one row below Resume.
-          Position is not independently verified.
-  - stop: Netflix restart requested.
+        message: Selected Continue from the beginning directly on the newly opened
+          Netflix title page before idle autoplay. No Back command was sent. Title/position
+          cannot be independently verified.
+  - stop: Netflix title-page restart requested.
     response_variable: restart_result

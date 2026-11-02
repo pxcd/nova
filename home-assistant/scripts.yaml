@@ -57,8 +57,8 @@ play_netflix_title:
     provided by Streaming Availability API by Movie of the Night: https://www.movieofthenight.com/about/api
     Returns to Google TV home before sending the title link so Netflix handles it
     when already open. Set from_start=true only for explicit restart/from-the-beginning
-    requests. Uses the tested Netflix playback menu; expects the desired profile already
-    selected.'
+    requests. Selects the freshly opened title page restart option before idle autoplay,
+    without Back; expects the desired profile already selected.'
   mode: single
   fields:
     query:
@@ -168,7 +168,7 @@ play_netflix_title:
       media_content_id: https://www.netflix.com/title/{{ netflix_ids[0] }}?source=30
   - if: '{{ from_start | default(false) }}'
     then:
-    - delay: 00:00:08
+    - delay: 00:00:02
     - action: script.netflix_restart_from_playback
       response_variable: restart_outcome
     - variables:
@@ -959,9 +959,10 @@ confirm_prime_video_selection:
   - stop: Prime selection confirmed.
     response_variable: confirmation
 netflix_restart_from_playback:
-  alias: Netflix restart from active playback (internal)
-  description: Internal tested Sony Netflix sequence. Requires active Netflix playback;
-    never use on a profile picker or browsing page.
+  alias: Netflix restart from freshly opened title page (internal)
+  description: Internal Sony Netflix title-page sequence. Called immediately after
+    opening the requested title; selects Continue from the beginning before idle autoplay.
+    Never sends Back.
   mode: single
   sequence:
   - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
@@ -972,26 +973,8 @@ netflix_restart_from_playback:
           status: needs_netflix_playback
           command_sent: false
           restart_verified: false
-          message: Netflix is not the foreground app. No restart command was sent.
+          message: Netflix is not the foreground app. No restart selection was sent.
     - stop: Netflix playback required.
-      response_variable: restart_result
-  - action: remote.send_command
-    target:
-      entity_id: remote.sony_xr_55x90l
-    data:
-      command: BACK
-  - delay: 00:00:01
-  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') != ''com.netflix.ninja''
-      }}'
-    then:
-    - variables:
-        restart_result:
-          status: needs_netflix_playback
-          command_sent: true
-          restart_verified: false
-          message: Netflix exited instead of opening the playback title menu. No restart
-            option was selected.
-    - stop: Netflix restart menu unavailable.
       response_variable: restart_result
   - action: remote.send_command
     target:
@@ -1006,7 +989,68 @@ netflix_restart_from_playback:
         status: restart_requested
         command_sent: true
         restart_verified: false
-        message: Selected Netflix Continue from the beginning, one row below Resume.
-          Position is not independently verified.
-  - stop: Netflix restart requested.
+        message: Selected Continue from the beginning directly on the newly opened
+          Netflix title page before idle autoplay. No Back command was sent. Title/position
+          cannot be independently verified.
+  - stop: Netflix title-page restart requested.
     response_variable: restart_result
+force_quit_tv_app:
+  alias: Force quit a TV media app
+  description: 'Force-stop one explicitly requested Sony TV media app: Netflix, HBO
+    Max, Prime Video, Apple TV, or Kodi. Use only for explicit force quit/force stop/kill
+    app requests. Not for restarting a movie/episode from the beginning. App data,
+    sign-in and watch history are not cleared. Raw package names and arbitrary shell
+    commands are not accepted.'
+  mode: single
+  fields:
+    app:
+      name: App
+      required: true
+      selector:
+        select:
+          options:
+          - Netflix
+          - HBO Max
+          - Prime Video
+          - Apple TV
+          - Kodi
+  sequence:
+  - variables:
+      packages:
+        netflix: com.netflix.ninja
+        hbo max: com.wbd.stream
+        prime video: com.amazon.amazonvideo.livingroom
+        apple tv: com.apple.atve.sony.appletv
+        kodi: org.xbmc.kodi
+      package: '{{ packages.get(app | lower | trim, '''') }}'
+  - if: '{{ not package }}'
+    then:
+    - variables:
+        quit_result:
+          status: unsupported_app
+          command_sent: false
+          message: Choose Netflix, HBO Max, Prime Video, Apple TV, or Kodi. No command
+            was sent.
+    - stop: Unsupported app.
+      response_variable: quit_result
+  - action: androidtv.adb_command
+    continue_on_error: true
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: am force-stop '{{ package }}' && if pidof '{{ package }}' >/dev/null
+        2>&1; then echo NOVA_QUIT_PENDING_{{ context.id }}; else echo NOVA_QUIT_OK_{{
+        context.id }}; fi
+  - variables:
+      stopped: '{{ (''NOVA_QUIT_OK_'' ~ context.id) in (state_attr(''media_player.android_tv_10_0_0_174'',
+        ''adb_response'') | default('''', true)) }}'
+      quit_result:
+        status: '{{ ''force_quit_confirmed'' if stopped else ''failed'' }}'
+        app: '{{ app }}'
+        command_sent: true
+        force_quit_verified: '{{ stopped }}'
+        message: '{{ ''Force-stop completed; the app main process is not running.
+          App data was not cleared.'' if stopped else ''Force-quit could not be confirmed.
+          Do not claim the app was stopped.'' }}'
+  - stop: App force-quit result.
+    response_variable: quit_result

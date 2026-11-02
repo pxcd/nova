@@ -57,3 +57,7 @@ The Apple FM provider/pipeline was removed from live HA and its compatibility br
 Netflix, HBO Max and Prime Video title tools accept a default-off `from_start` boolean. For example: “Play White Chicks on Netflix from the start,” “Play Game of Thrones on HBO from the beginning,” or “Play Fallout on Prime Video from the start.” Regular play/resume requests keep their previous behavior. A recent, unambiguous title/service can supply context for “start this over”; otherwise NOVA asks which title/service.
 
 Restart means the selected movie or current episode, not the first episode of a series. These paths use each app’s tested Sony UI controls and do not independently measure playback position. Netflix expects the desired profile already selected. HBO establishes a cold app/profile launch before choosing Resume or Restart. Prime uses its configured highlighted-profile step and selects the circular-arrow icon with Up then OK. No ad-skipping commands are sent. Apple TV+ restart is postponed. See the provider integration notes for UI/timing assumptions.
+
+## Force quit a TV app
+
+Say “Force quit Prime Video,” “Force stop Netflix,” or “Kill the Kodi app.” `script.force_quit_tv_app` is limited to Netflix, HBO Max, Prime Video, Apple TV and Kodi, and verifies the app main process stopped. It does not clear app data. This is distinct from restarting a movie/episode from the beginning. The Netflix start-over path now selects Restart directly before the title-page autoplay countdown; it no longer presses Back into the prior title's page.
