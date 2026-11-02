@@ -48,7 +48,7 @@ Keep `.env`, `.local/`, populated HA `secrets.yaml`, and ADB pairing keys outsid
 
 ## Model providers
 
-The original GPT-OSS pipeline remains NOVA's configured webapp pipeline. **Qwen3 4B** is a separately selectable HA Assist pipeline using the same LM Studio server, model `qwen/qwen3-4b-2507`, and the same NOVA device-control tools. See `home-assistant/qwen3-4b.json` and `experiments/qwen3-4b/` for reference settings and checks. To change the webapp's provider, deliberately update `HA_PIPELINE_ID` in the private `.env` and restart NOVA.
+The original GPT-OSS pipeline remains NOVA's configured webapp pipeline. **Qwen3 4B** is a separately selectable HA Assist pipeline using the same LM Studio server, model `qwen/qwen3-4b-2507`, and the same NOVA instructions/tools. See `home-assistant/qwen3-4b.json` and `experiments/qwen3-4b/` for reference settings and checks. To change the webapp's provider, deliberately update `HA_PIPELINE_ID` in the private `.env` and restart NOVA.
 
 The Apple FM provider/pipeline was removed from live HA and its compatibility bridge stopped. Historical code and results remain in `experiments/apple-fm/`; the bridge is not required by GPT-OSS or Qwen.
 
@@ -62,4 +62,4 @@ Restart means the selected movie or current episode, not the first episode of a 
 
 Say “Force quit Prime Video,” “Force stop Netflix,” or “Kill the Kodi app.” `script.force_quit_tv_app` is limited to Netflix, HBO Max, Prime Video, Apple TV and Kodi, and verifies the app main process stopped. It does not clear app data. This is distinct from restarting a movie/episode from the beginning. The Netflix start-over path now selects Restart directly before the title-page autoplay countdown; it no longer presses Back into the prior title's page.
 
-After a successful title request, GPT-OSS appends one short spoiler-free catalog fact instead of a snarky quip. Netflix, HBO Max, Prime Video, and Apple TV tools randomly select a supplied cast, director, or release/premiere-year credit; Kodi uses its existing catalog year. No plot summaries, web searches, or extra inference calls are used. Missing metadata skips trivia. The prompt forbids adding unsupported facts; this remains a model instruction, not a factuality guarantee.
+GPT-OSS adds one brief, title-specific, spoiler-free quip after successful action requests. The prompt favors dry wit and understatement, avoids factual trivia claims, and uses title-based wordplay or skips the joke for unfamiliar titles. No extra lookup or inference call is added.
