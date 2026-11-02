@@ -1,0 +1,862 @@
+launch_netflix_living_room:
+  alias: Launch Netflix on living room TV
+  description: Open Netflix on the Sony XR-55X90L in the Living Room. Wait for the
+    TV to report Netflix as the foreground app; an error means launch was not confirmed.
+  mode: single
+  sequence:
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.bravia_xr_55x90l
+    data:
+      media_content_type: app
+      media_content_id: Netflix
+  - wait_template: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'')
+      == ''com.netflix.ninja'' }}'
+    timeout: 00:00:30
+    continue_on_timeout: true
+  - if: '{{ not wait.completed }}'
+    then:
+    - stop: Netflix did not become the active app on the TV.
+      error: true
+tv_go_home:
+  alias: Go to TV home
+  description: Return the living room Sony TV to its Google TV home screen. Use for
+    requests such as go home, TV home, or exit the current app to the home screen.
+  mode: single
+  sequence:
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+select_netflix_paolo_profile:
+  alias: Select Paolo Netflix profile
+  description: Press OK on the Netflix profile picker to select Paolo, the only profile.
+    Use only when the Netflix profile picker is visible or the user explicitly requests
+    profile selection. Does not detect or verify the profile picker; reports only
+    that OK was sent.
+  mode: single
+  sequence:
+  - if: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'') not in [''com.netflix.ninja'',
+      ''Netflix''] }}'
+    then:
+    - stop: Netflix is not the active TV app. Open Netflix before selecting the profile.
+      error: true
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: DPAD_CENTER
+play_netflix_title:
+  alias: Play a show or movie on Netflix
+  description: 'Find a named movie or show on Netflix in the Philippines and send
+    its title link to the living room Sony TV. For watch/play requests with a content
+    title, use this instead of the plain Netflix launcher. Pass only the title in
+    query. Always send a fresh command, including repeated requests. Reports whether
+    the command was sent, not whether playback actually started. Availability data
+    provided by Streaming Availability API by Movie of the Night: https://www.movieofthenight.com/about/api
+    Returns to Google TV home before sending the title link so Netflix handles it
+    when already open.'
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or show title only. Correct obvious STT homophones
+        from context. When a catalog result suggests a clearly intended canonical
+        title, retry once using that exact title.
+      required: true
+      selector:
+        text: null
+  sequence:
+  - action: rest_command.netflix_title_search
+    data:
+      query: '{{ query | trim }}'
+    response_variable: search_response
+  - if: '{{ search_response.status != 200 or search_response.content is not sequence
+      or search_response.content is string or search_response.content is mapping }}'
+    then:
+    - variables:
+        failure_result:
+          status: failed
+          http_status: '{{ search_response.status }}'
+          command_sent: false
+          message: Title lookup failed. No TV command was sent. Report failure; never
+            claim playback.
+    - stop: Title lookup failed.
+      response_variable: failure_result
+  - variables:
+      matches: "{% set wanted = query | lower | regex_replace('[^a-z0-9]', '') %}\
+        \ {% set ns = namespace(found=[]) %} {% for item in search_response.content\
+        \ %}\n  {% set title = item.get('title', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% set original = item.get('originalTitle', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% if wanted and wanted in [title, original] %}\n    {% set ns.found\
+        \ = ns.found + [item] %}\n  {% endif %}\n{% endfor %} {{ ns.found }}"
+  - variables:
+      eligible_matches: "{% set ns = namespace(found=[]) %}\n{% for item in matches\
+        \ %}\n  {% set available = namespace(value=false) %}\n  {% for option in item.get('streamingOptions',\
+        \ {}).get('ph', []) %}\n    {% if option.get('service', {}).get('id') == 'netflix'\
+        \ and option.get('type') == 'subscription' and option.get('link') %}\n   \
+        \   {% set available.value = true %}\n    {% endif %}\n  {% endfor %}\n  {%\
+        \ if available.value %}{% set ns.found = ns.found + [item] %}{% endif %}\n\
+        {% endfor %}{{ ns.found }}"
+  - variables:
+      matches: '{{ eligible_matches if eligible_matches | count == 1 else matches
+        }}'
+  - if: '{{ matches | count != 1 }}'
+    then:
+    - variables:
+        clarification_result:
+          status: '{{ ''needs_title_correction'' if matches | count == 0 else ''needs_clarification''
+            }}'
+          command_sent: false
+          message: No unique exact title match. If the transcript has an obvious title
+            homophone or speech error, select the clearly intended canonical title
+            from these catalog candidates and call this tool once more with that title.
+            Ask only when genuinely uncertain. No TV command has been sent.
+          candidates: "{% set ns = namespace(items=[]) %}\n{% set candidates = matches\
+            \ if matches | count > 0 else search_response.content %}\n{% for item\
+            \ in candidates[:12] %}\n {% set available = namespace(value=false) %}\n\
+            \ {% for option in item.get('streamingOptions', {}).get('ph', []) %}\n\
+            \  {% if option.get('service', {}).get('id') == 'netflix' and option.get('type')\
+            \ == 'subscription' and option.get('link') %}{% set available.value =\
+            \ true %}{% endif %}\n {% endfor %}\n {% if available.value %}\n  {% set\
+            \ ns.items = ns.items + [dict(title=item.get('title'), type=item.get('showType'),\
+            \ year=item.get('releaseYear', item.get('firstAirYear')), available_on_requested_service=true)]\
+            \ %}\n {% endif %}\n{% endfor %}{{ ns.items }}"
+          heard_title: '{{ query }}'
+    - stop: Title needs clarification.
+      response_variable: clarification_result
+  - variables:
+      netflix_ids: "{% set ns = namespace(ids=[]) %} {% for option in matches[0].get('streamingOptions',\
+        \ {}).get('ph', []) %}\n  {% if option.get('service', {}).get('id') == 'netflix'\
+        \ and option.get('type') == 'subscription' %}\n    {% set ids = option.get('link',\
+        \ '') | regex_findall('^https://www[.]netflix[.]com/title/([0-9]{6,8})/?$')\
+        \ %}\n    {% set ns.ids = ns.ids + ids %}\n  {% endif %}\n{% endfor %} {{\
+        \ ns.ids | unique | list }}"
+  - if: '{{ netflix_ids | count != 1 }}'
+    then:
+    - variables:
+        unavailable_result:
+          status: unavailable
+          title: '{{ matches[0].title }}'
+          country: PH
+          command_sent: false
+          message: No unique Netflix PH subscription link was returned. Nothing was
+            sent to the TV; do not claim playback.
+    - stop: Netflix PH link unavailable.
+      response_variable: unavailable_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+  - delay: 00:00:01
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.sony_xr_55x90l_2
+    data:
+      media_content_type: url
+      media_content_id: https://www.netflix.com/title/{{ netflix_ids[0] }}?source=30
+  - variables:
+      launch_result:
+        status: title_link_sent
+        title: '{{ matches[0].title }}'
+        country: PH
+        netflix_id: '{{ netflix_ids[0] }}'
+        command_sent: true
+        playback_verified: false
+        message: Netflix title link sent. Playback and profile selection are not verified.
+  - stop: Netflix title link sent.
+    response_variable: launch_result
+play_hbo_title:
+  alias: Play or open a title on HBO Max
+  description: 'Look up a named movie or show on HBO Max in the Philippines. Always
+    use this for HBO, HBO Max, or Max requests naming content. query is only the title.
+    start_playback=true for play/watch/resume; false for open/show details. Uses HBO
+    own default Play/Resume button to follow the selected profile watch progress.
+    Assumes profile already selected; cannot detect profile picker or verify playback.
+    Availability data: Streaming Availability API by Movie of the Night, https://www.movieofthenight.com/about/api'
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or show title only. Correct obvious STT homophones
+        from context. When a catalog result suggests a clearly intended canonical
+        title, retry once using that exact title.
+      required: true
+      selector:
+        text: null
+    start_playback:
+      name: Start playback
+      description: True for play/watch/resume; false for opening title details only.
+      default: true
+      selector:
+        boolean: {}
+  sequence:
+  - action: rest_command.netflix_title_search
+    data:
+      query: '{{ query | trim }}'
+    response_variable: search_response
+  - if: '{{ search_response.status != 200 or search_response.content is not sequence
+      or search_response.content is string or search_response.content is mapping }}'
+    then:
+    - variables:
+        failure_result:
+          status: failed
+          http_status: '{{ search_response.status }}'
+          command_sent: false
+          message: Title lookup failed. No TV command was sent. Report failure; never
+            claim playback.
+    - stop: Title lookup failed.
+      response_variable: failure_result
+  - variables:
+      matches: "{% set wanted = query | lower | regex_replace('[^a-z0-9]', '') %}\
+        \ {% set ns = namespace(found=[]) %} {% for item in search_response.content\
+        \ %}\n  {% set title = item.get('title', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% set original = item.get('originalTitle', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% if wanted and wanted in [title, original] %}\n    {% set ns.found\
+        \ = ns.found + [item] %}\n  {% endif %}\n{% endfor %} {{ ns.found }}"
+  - variables:
+      eligible_matches: "{% set ns = namespace(found=[]) %}\n{% for item in matches\
+        \ %}\n  {% set available = namespace(value=false) %}\n  {% for option in item.get('streamingOptions',\
+        \ {}).get('ph', []) %}\n    {% if option.get('service', {}).get('id') == 'hbo'\
+        \ and option.get('type') == 'subscription' and option.get('link') %}\n   \
+        \   {% set available.value = true %}\n    {% endif %}\n  {% endfor %}\n  {%\
+        \ if available.value %}{% set ns.found = ns.found + [item] %}{% endif %}\n\
+        {% endfor %}{{ ns.found }}"
+  - variables:
+      matches: '{{ eligible_matches if eligible_matches | count == 1 else matches
+        }}'
+  - if: '{{ matches | count != 1 }}'
+    then:
+    - variables:
+        clarification_result:
+          status: '{{ ''needs_title_correction'' if matches | count == 0 else ''needs_clarification''
+            }}'
+          command_sent: false
+          message: No unique exact title match. If the transcript has an obvious title
+            homophone or speech error, select the clearly intended canonical title
+            from these catalog candidates and call this tool once more with that title.
+            Ask only when genuinely uncertain. No TV command has been sent.
+          candidates: "{% set ns = namespace(items=[]) %}\n{% set candidates = matches\
+            \ if matches | count > 0 else search_response.content %}\n{% for item\
+            \ in candidates[:12] %}\n {% set available = namespace(value=false) %}\n\
+            \ {% for option in item.get('streamingOptions', {}).get('ph', []) %}\n\
+            \  {% if option.get('service', {}).get('id') == 'hbo' and option.get('type')\
+            \ == 'subscription' and option.get('link') %}{% set available.value =\
+            \ true %}{% endif %}\n {% endfor %}\n {% if available.value %}\n  {% set\
+            \ ns.items = ns.items + [dict(title=item.get('title'), type=item.get('showType'),\
+            \ year=item.get('releaseYear', item.get('firstAirYear')), available_on_requested_service=true)]\
+            \ %}\n {% endif %}\n{% endfor %}{{ ns.items }}"
+          heard_title: '{{ query }}'
+    - stop: Title needs clarification.
+      response_variable: clarification_result
+  - variables:
+      hbo_links: '{% set ns = namespace(links=[]) %}
+
+        {% for option in matches[0].get(''streamingOptions'', {}).get(''ph'', [])
+        %}
+
+        {% set link = option.get(''link'', '''') %}
+
+        {% if option.get(''service'', {}).get(''id'') == ''hbo'' and option.get(''type'')
+        == ''subscription'' and link | regex_match(''^https://play[.]hbomax[.]com/(show|movie)/[a-zA-Z0-9-]+/?$'')
+        %}
+
+        {% set ns.links = ns.links + [link] %}
+
+        {% endif %}
+
+        {% endfor %}{{ ns.links | unique | list }}'
+  - if: '{{ hbo_links | count != 1 }}'
+    then:
+    - variables:
+        unavailable_result:
+          status: unavailable
+          title: '{{ matches[0].title }}'
+          country: PH
+          command_sent: false
+          message: No unique HBO Max PH subscription link was returned. No TV command
+            was sent.
+    - stop: HBO Max PH link unavailable.
+      response_variable: unavailable_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+  - delay: 00:00:01
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.sony_xr_55x90l_2
+    data:
+      media_content_type: url
+      media_content_id: '{{ hbo_links[0] }}'
+  - if: '{{ start_playback | default(true) }}'
+    then:
+    - delay: 00:00:08
+    - action: remote.send_command
+      target:
+        entity_id: remote.sony_xr_55x90l
+      data:
+        command: DPAD_CENTER
+  - variables:
+      launch_result:
+        status: '{{ ''playback_requested'' if start_playback | default(true) else
+          ''title_link_sent'' }}'
+        title: '{{ matches[0].title }}'
+        country: PH
+        title_link: '{{ hbo_links[0] }}'
+        command_sent: true
+        playback_verified: false
+        message: HBO title link sent; OK pressed only if playback requested. Playback/profile
+          picker cannot be verified.
+  - stop: HBO Max request sent.
+    response_variable: launch_result
+launch_hbo_max_living_room:
+  alias: Open HBO Max on living room TV
+  description: Open HBO Max (also called HBO or Max) without choosing specific content.
+  mode: single
+  sequence:
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.bravia_xr_55x90l
+    data:
+      media_content_type: app
+      media_content_id: HBO Max
+confirm_hbo_selection:
+  alias: Confirm HBO Max selection
+  description: Press OK once on HBO Max. Use only when the user confirms a profile
+    picker or title details page is visible and requests profile selection or resume.
+    Cannot identify the current screen.
+  mode: single
+  sequence:
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: DPAD_CENTER
+pov_execute_request:
+  alias: POV internal bridge
+  mode: single
+  sequence:
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.bravia_xr_55x90l
+    data:
+      media_content_type: app
+      media_content_id: Kodi
+  - action: shell_command.nova_pov_request
+    data:
+      request_payload: '{{ request_payload }}'
+    response_variable: command
+  - if: '{{ command.returncode != 0 }}'
+    then:
+    - variables:
+        pov_error:
+          status: failed
+          command_sent: false
+          message: POV bridge failed to run. Playback is not verified.
+    - stop: POV bridge failed.
+      response_variable: pov_error
+  - variables:
+      pov_result: '{{ command.stdout | from_json }}'
+  - stop: POV result.
+    response_variable: pov_result
+search_kodi_pov:
+  alias: Search Kodi POV movies and series
+  description: Search movies or series through POV on the living room Kodi. Returns
+    catalog titles and years, without starting playback. POV is the default for Kodi
+    movies/series. Does not handle sports or The Loop.
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or series title only. Correct obvious speech errors
+        using catalog suggestions.
+      required: true
+      selector:
+        text: {}
+    media_type:
+      name: Content type
+      description: movie or series; POV is the default Kodi add-on for both.
+      required: true
+      selector:
+        select:
+          options:
+          - movie
+          - series
+  sequence:
+  - action: script.pov_execute_request
+    data:
+      request_payload:
+        operation: search
+        query: '{{ query }}'
+        media_type: '{{ media_type }}'
+    response_variable: pov_result
+  - stop: POV search results.
+    response_variable: pov_result
+play_kodi_pov:
+  alias: Play a movie or episode through Kodi POV
+  description: Play a named movie or a specific series episode using POV, the default
+    Kodi movie/series add-on. For series require explicit season and episode; do not
+    guess latest season or resume. Optional year disambiguates remakes. Use catalog
+    candidates for one canonical-title retry after a speech error. Only say playback
+    confirmed when playback_verified=true; otherwise say request sent or source selection
+    may be needed. Does not handle sports or The Loop.
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or series title only. Correct obvious speech errors
+        using catalog suggestions.
+      required: true
+      selector:
+        text: {}
+    media_type:
+      name: Content type
+      description: movie or series; POV is the default Kodi add-on for both.
+      required: true
+      selector:
+        select:
+          options:
+          - movie
+          - series
+    year:
+      description: Optional release year for ambiguous titles.
+      selector:
+        number:
+          min: 1880
+          max: 2200
+          step: 1
+          mode: box
+    season:
+      description: Explicit season number for a series; required for series playback.
+      selector:
+        number:
+          min: 1
+          max: 999
+          step: 1
+          mode: box
+    episode:
+      description: Explicit episode number for a series; required for series playback.
+      selector:
+        number:
+          min: 1
+          max: 999
+          step: 1
+          mode: box
+  sequence:
+  - action: script.pov_execute_request
+    data:
+      request_payload:
+        operation: play
+        query: '{{ query }}'
+        media_type: '{{ media_type }}'
+        year: '{{ year | default(none) }}'
+        season: '{{ season | default(none) }}'
+        episode: '{{ episode | default(none) }}'
+    response_variable: pov_result
+  - stop: POV playback result.
+    response_variable: pov_result
+play_apple_tv_title:
+  alias: Play or open a title on Apple TV+
+  description: 'Look up a movie or series included with Apple TV+ in the Philippines
+    and open it in the Sony Apple TV app. Not for rentals, purchases, or third-party
+    Apple channels. query is the canonical title; optional year resolves remakes.
+    start_playback=true for play/watch/resume, false for details only. Uses the app
+    default Play/Resume selection; playback is not verified. Catalog: Streaming Availability
+    API by Movie of the Night.'
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or show title only. Correct obvious STT homophones
+        from context. When a catalog result suggests a clearly intended canonical
+        title, retry once using that exact title.
+      required: true
+      selector:
+        text: null
+    start_playback:
+      name: Start playback
+      description: True for play/watch/resume; false for opening title details only.
+      default: true
+      selector:
+        boolean: {}
+    year:
+      name: Release year
+      description: Optional numeric movie release year or series first-air year.
+      selector:
+        number:
+          min: 1880
+          max: 2200
+          mode: box
+  sequence:
+  - action: rest_command.netflix_title_search
+    data:
+      query: '{{ query | trim }}'
+    response_variable: search_response
+  - if: '{{ search_response.status != 200 or search_response.content is not sequence
+      or search_response.content is string or search_response.content is mapping }}'
+    then:
+    - variables:
+        failure_result:
+          status: failed
+          http_status: '{{ search_response.status }}'
+          command_sent: false
+          message: Title lookup failed. No TV command was sent. Report failure; never
+            claim playback.
+    - stop: Title lookup failed.
+      response_variable: failure_result
+  - variables:
+      matches: "{% set wanted = query | lower | regex_replace('[^a-z0-9]', '') %}\
+        \ {% set ns = namespace(found=[]) %} {% for item in search_response.content\
+        \ %}\n  {% set title = item.get('title', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% set original = item.get('originalTitle', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% if wanted and wanted in [title, original] and (year | default(none)\
+        \ is none or item.get('releaseYear', item.get('firstAirYear', 0)) | int(0)\
+        \ == year | int(0)) %}\n    {% set ns.found = ns.found + [item] %}\n  {% endif\
+        \ %}\n{% endfor %} {{ ns.found }}"
+  - variables:
+      eligible_matches: "{% set ns = namespace(found=[]) %}\n{% for item in matches\
+        \ %}\n  {% set available = namespace(value=false) %}\n  {% for option in item.get('streamingOptions',\
+        \ {}).get('ph', []) %}\n    {% if option.get('service', {}).get('id') == 'apple'\
+        \ and option.get('type') == 'subscription' and option.get('link') %}\n   \
+        \   {% set available.value = true %}\n    {% endif %}\n  {% endfor %}\n  {%\
+        \ if available.value %}{% set ns.found = ns.found + [item] %}{% endif %}\n\
+        {% endfor %}{{ ns.found }}"
+  - variables:
+      matches: '{{ eligible_matches if eligible_matches | count == 1 else matches
+        }}'
+  - if: '{{ matches | count != 1 }}'
+    then:
+    - variables:
+        clarification_result:
+          status: '{{ ''needs_title_correction'' if matches | count == 0 else ''needs_clarification''
+            }}'
+          command_sent: false
+          message: No unique exact title match. If the transcript has an obvious title
+            homophone or speech error, select the clearly intended canonical title
+            from these catalog candidates and call this tool once more with that title.
+            Ask only when genuinely uncertain. No TV command has been sent.
+          candidates: "{% set ns = namespace(items=[]) %}\n{% set candidates = matches\
+            \ if matches | count > 0 else search_response.content %}\n{% for item\
+            \ in candidates[:12] %}\n {% set available = namespace(value=false) %}\n\
+            \ {% for option in item.get('streamingOptions', {}).get('ph', []) %}\n\
+            \  {% if option.get('service', {}).get('id') == 'apple' and option.get('type')\
+            \ == 'subscription' and option.get('link') %}{% set available.value =\
+            \ true %}{% endif %}\n {% endfor %}\n {% if available.value %}\n  {% set\
+            \ ns.items = ns.items + [dict(title=item.get('title'), type=item.get('showType'),\
+            \ year=item.get('releaseYear', item.get('firstAirYear')), available_on_requested_service=true)]\
+            \ %}\n {% endif %}\n{% endfor %}{{ ns.items }}"
+          heard_title: '{{ query }}'
+    - stop: Title needs clarification.
+      response_variable: clarification_result
+  - variables:
+      apple_links: '{% set ns = namespace(links=[]) %}
+
+        {% for option in matches[0].get(''streamingOptions'', {}).get(''ph'', [])
+        %}
+
+        {% set link = option.get(''link'', '''') %}
+
+        {% if option.get(''service'', {}).get(''id'') == ''apple'' and option.get(''type'')
+        == ''subscription'' and link | regex_match(''^https://tv[.]apple[.]com/([a-z]{2}/)?(show|movie)/[a-zA-Z0-9%._~-]+/umc[.]cmc[.][a-zA-Z0-9]+/?$'')
+        %}
+
+        {% set ns.links = ns.links + [link] %}
+
+        {% endif %}
+
+        {% endfor %}{{ ns.links | unique | list }}'
+  - if: '{{ apple_links | count != 1 }}'
+    then:
+    - variables:
+        unavailable_result:
+          status: unavailable
+          title: '{{ matches[0].title }}'
+          country: PH
+          command_sent: false
+          message: No unique Apple TV+ PH subscription link was returned. No TV command
+            was sent.
+    - stop: Apple TV+ PH link unavailable.
+      response_variable: unavailable_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+  - delay: 00:00:01
+  - action: androidtv.adb_command
+    continue_on_error: true
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: am start -W -a android.intent.action.VIEW -d '{{ apple_links[0] }}'
+        -p com.apple.atve.sony.appletv; echo NOVA_APPLE_{{ context.id }}
+  - if: '{{ (''NOVA_APPLE_'' ~ context.id) not in (state_attr(''media_player.android_tv_10_0_0_174'',
+      ''adb_response'') | default('''', true)) or ''Status: ok'' not in (state_attr(''media_player.android_tv_10_0_0_174'',
+      ''adb_response'') | default('''', true)) }}'
+    then:
+    - variables:
+        launch_failure:
+          status: failed
+          command_sent: true
+          playback_verified: false
+          message: Apple TV launch was not confirmed by ADB. No OK was sent; do not
+            claim playback.
+    - stop: Apple TV intent failed.
+      response_variable: launch_failure
+  - if: '{{ start_playback | default(true) }}'
+    then:
+    - delay: 00:00:05
+    - action: remote.send_command
+      target:
+        entity_id: remote.sony_xr_55x90l
+      data:
+        command: DPAD_CENTER
+  - variables:
+      launch_result:
+        status: '{{ ''playback_requested'' if start_playback | default(true) else
+          ''title_link_sent'' }}'
+        title: '{{ matches[0].title }}'
+        country: PH
+        title_link: '{{ apple_links[0] }}'
+        command_sent: true
+        playback_verified: false
+        message: Apple TV+ title intent delivered to the installed Sony app. One OK
+          sent only for playback requests; actual playback is not verified.
+        year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
+          }}'
+  - stop: Apple TV+ request sent.
+    response_variable: launch_result
+launch_apple_tv_living_room:
+  alias: Open Apple TV on living room TV
+  description: Open the signed-in Apple TV app on the Sony without selecting content.
+  mode: single
+  sequence:
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: am start -W -n com.apple.atve.sony.appletv/com.apple.atve.androidtv.appletv.MainActivity
+play_prime_video_title:
+  alias: Play or open a title on Prime Video
+  description: 'Look up a movie or series included with Prime Video in the Philippines
+    and open the installed Sony Prime Video app. Excludes rentals, purchases and add-on
+    channels. query is only the title; optional year resolves collisions. start_playback=true
+    for play/watch/resume, false for details. This Sony shows a profile picker on
+    title launches: select_profile defaults true and selects the previously confirmed
+    highlighted profile, then presses Play once. Set false if profile selection is
+    no longer required. Does not skip ads or verify video playback. Catalog: Streaming
+    Availability API by Movie of the Night.'
+  mode: single
+  fields:
+    query:
+      name: Title
+      description: Canonical movie or show title only. Correct obvious STT homophones
+        from context. When a catalog result suggests a clearly intended canonical
+        title, retry once using that exact title.
+      required: true
+      selector:
+        text: null
+    start_playback:
+      name: Start playback
+      description: True for play/watch/resume; false for opening title details only.
+      default: true
+      selector:
+        boolean: {}
+    year:
+      name: Release year
+      description: Optional numeric movie release year or series first-air year.
+      selector:
+        number:
+          min: 1880
+          max: 2200
+          mode: box
+    select_profile:
+      name: Select highlighted profile
+      description: True for this Sony, which shows its already-highlighted desired
+        profile on title launches. False only when profile selection is not required.
+      default: true
+      selector:
+        boolean: {}
+  sequence:
+  - action: rest_command.netflix_title_search
+    data:
+      query: '{{ query | trim }}'
+    response_variable: search_response
+  - if: '{{ search_response.status != 200 or search_response.content is not sequence
+      or search_response.content is string or search_response.content is mapping }}'
+    then:
+    - variables:
+        failure_result:
+          status: failed
+          http_status: '{{ search_response.status }}'
+          command_sent: false
+          message: Title lookup failed. No TV command was sent. Report failure; never
+            claim playback.
+    - stop: Title lookup failed.
+      response_variable: failure_result
+  - variables:
+      matches: "{% set wanted = query | lower | regex_replace('[^a-z0-9]', '') %}\
+        \ {% set ns = namespace(found=[]) %} {% for item in search_response.content\
+        \ %}\n  {% set title = item.get('title', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% set original = item.get('originalTitle', '') | lower | regex_replace('[^a-z0-9]',\
+        \ '') %}\n  {% if wanted and wanted in [title, original] and (year | default(none)\
+        \ is none or item.get('releaseYear', item.get('firstAirYear', 0)) | int(0)\
+        \ == year | int(0)) %}\n    {% set ns.found = ns.found + [item] %}\n  {% endif\
+        \ %}\n{% endfor %} {{ ns.found }}"
+  - variables:
+      eligible_matches: "{% set ns = namespace(found=[]) %}\n{% for item in matches\
+        \ %}\n  {% set available = namespace(value=false) %}\n  {% for option in item.get('streamingOptions',\
+        \ {}).get('ph', []) %}\n    {% if option.get('service', {}).get('id') == 'prime'\
+        \ and option.get('type') == 'subscription' and option.get('link') %}\n   \
+        \   {% set available.value = true %}\n    {% endif %}\n  {% endfor %}\n  {%\
+        \ if available.value %}{% set ns.found = ns.found + [item] %}{% endif %}\n\
+        {% endfor %}{{ ns.found }}"
+  - variables:
+      matches: '{{ eligible_matches if eligible_matches | count == 1 else matches
+        }}'
+  - if: '{{ matches | count != 1 }}'
+    then:
+    - variables:
+        clarification_result:
+          status: '{{ ''needs_title_correction'' if matches | count == 0 else ''needs_clarification''
+            }}'
+          command_sent: false
+          message: No unique exact title match. If the transcript has an obvious title
+            homophone or speech error, select the clearly intended canonical title
+            from these catalog candidates and call this tool once more with that title.
+            Ask only when genuinely uncertain. No TV command has been sent.
+          candidates: "{% set ns = namespace(items=[]) %}\n{% set candidates = matches\
+            \ if matches | count > 0 else search_response.content %}\n{% for item\
+            \ in candidates[:12] %}\n {% set available = namespace(value=false) %}\n\
+            \ {% for option in item.get('streamingOptions', {}).get('ph', []) %}\n\
+            \  {% if option.get('service', {}).get('id') == 'prime' and option.get('type')\
+            \ == 'subscription' and option.get('link') %}{% set available.value =\
+            \ true %}{% endif %}\n {% endfor %}\n {% if available.value %}\n  {% set\
+            \ ns.items = ns.items + [dict(title=item.get('title'), type=item.get('showType'),\
+            \ year=item.get('releaseYear', item.get('firstAirYear')), available_on_requested_service=true)]\
+            \ %}\n {% endif %}\n{% endfor %}{{ ns.items }}"
+          heard_title: '{{ query }}'
+    - stop: Title needs clarification.
+      response_variable: clarification_result
+  - variables:
+      prime_links: '{% set ns = namespace(links=[]) %}
+
+        {% for option in matches[0].get(''streamingOptions'', {}).get(''ph'', [])
+        %}
+
+        {% set link = option.get(''link'', '''') %}
+
+        {% if option.get(''service'', {}).get(''id'') == ''prime'' and option.get(''type'')
+        == ''subscription'' and link | regex_match(''^https://(app[.]primevideo[.]com/detail[?]gti=amzn1[.]dv[.]gti[.][a-zA-Z0-9-]+|(www[.])?primevideo[.]com/detail/[a-zA-Z0-9]+/?)$'')
+        %}
+
+        {% set ns.links = ns.links + [link] %}
+
+        {% endif %}
+
+        {% endfor %}{{ (ns.links | unique | list)[:1] }}'
+  - if: '{{ prime_links | count != 1 }}'
+    then:
+    - variables:
+        unavailable_result:
+          status: unavailable
+          title: '{{ matches[0].title }}'
+          country: PH
+          command_sent: false
+          message: No supported Prime Video PH subscription link was returned. No
+            TV command was sent.
+    - stop: Prime Video PH link unavailable.
+      response_variable: unavailable_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+  - delay: 00:00:01
+  - action: androidtv.adb_command
+    continue_on_error: true
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: am start -W -a android.intent.action.VIEW -d '{{ prime_links[0] }}'
+        -p com.amazon.amazonvideo.livingroom; echo NOVA_PRIME_{{ context.id }}
+  - if: '{{ (''NOVA_PRIME_'' ~ context.id) not in (state_attr(''media_player.android_tv_10_0_0_174'',
+      ''adb_response'') | default('''', true)) or ''Status: ok'' not in (state_attr(''media_player.android_tv_10_0_0_174'',
+      ''adb_response'') | default('''', true)) }}'
+    then:
+    - variables:
+        launch_failure:
+          status: failed
+          command_sent: true
+          playback_verified: false
+          message: Prime Video launch was not confirmed by ADB. No OK was sent; do
+            not claim playback.
+    - stop: Prime Video intent failed.
+      response_variable: launch_failure
+  - if: '{{ select_profile | default(true) }}'
+    then:
+    - delay: 00:00:05
+    - action: remote.send_command
+      target:
+        entity_id: remote.sony_xr_55x90l
+      data:
+        command: DPAD_CENTER
+  - if: '{{ start_playback | default(true) }}'
+    then:
+    - delay: 00:00:05
+    - action: remote.send_command
+      target:
+        entity_id: remote.sony_xr_55x90l
+      data:
+        command: DPAD_CENTER
+  - variables:
+      launch_result:
+        status: '{{ ''playback_requested'' if start_playback | default(true) else
+          ''title_link_sent'' }}'
+        title: '{{ matches[0].title }}'
+        country: PH
+        title_link: '{{ prime_links[0] }}'
+        command_sent: true
+        playback_verified: false
+        message: Prime title intent delivered to the installed Sony app. Highlighted
+          profile selected if configured; Play pressed only for playback requests.
+          Actual playback and ad completion are not verified. No extra commands were
+          sent to skip ads.
+        year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
+          }}'
+  - stop: Prime Video request sent.
+    response_variable: launch_result
+launch_prime_video_living_room:
+  alias: Open Prime Video on living room TV
+  description: Open the installed Prime Video app without selecting content.
+  mode: single
+  sequence:
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: am start -W -n com.amazon.amazonvideo.livingroom/com.amazon.ignition.IgnitionActivity
+confirm_prime_video_selection:
+  alias: Confirm visible Prime Video profile or Play button
+  description: Press OK once only when the user confirms their desired Prime profile
+    or Play/Resume button is highlighted. Never use to skip ads or blindly recover
+    a launch.
+  mode: single
+  sequence:
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: DPAD_CENTER
+  - variables:
+      confirmation:
+        status: confirmation_sent
+        command_sent: true
+        playback_verified: false
+        message: One OK sent to the user-confirmed Prime screen; playback is not verified.
+  - stop: Prime selection confirmed.
+    response_variable: confirmation

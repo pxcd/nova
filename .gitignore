@@ -1,0 +1,22 @@
+.env
+.env.*
+!.env.example
+.local/
+node_modules/
+*.log
+.DS_Store
+
+__pycache__/
+*.pyc
+
+# Machine-local HA and TLS credentials
+secrets.yaml
+adbkey
+adbkey.pub
+*.key
+*.pem
+*.crt
+*.csr
+*.srl
+*.p12
+*.pfx

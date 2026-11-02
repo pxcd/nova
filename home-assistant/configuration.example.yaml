@@ -1,0 +1,4 @@
+# Merge these entries with existing HA configuration; do not duplicate mapping keys.
+script: !include scripts.yaml
+rest_command: !include rest_commands.yaml
+shell_command: !include shell_commands.yaml

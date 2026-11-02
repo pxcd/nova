@@ -1,0 +1,2 @@
+nova_pov_request: python3 /config/nova_pov.py '{{ request_payload | to_json | base64_encode
+  }}'
