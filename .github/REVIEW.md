@@ -31,3 +31,5 @@ The default-branch workflow uploads an immutable v4 artifact containing the owne
 The gate trusts repository-owner attestations and trusted Actions automation. It does not defend against an administrator changing the rules or a compromised write-capable Actions token directly forging any GitHub-Actions-sourced required check. Ordinary CI remains read-only; privileged gate code always comes from the default branch. No PR code is run with a write token.
 
 For Actions API outages, inspect the failed workflow logs and retry validation; a pending check is not a new review request.
+
+Validation exercise: a new head commit must invalidate the previous review receipt.
