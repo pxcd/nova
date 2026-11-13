@@ -106,3 +106,13 @@ test('real-style Context repo getter and environment attempt survive publication
   try { await handle({ ...x, phase: 'publish' }); assert.equal(x.state.checks.at(-1).conclusion, 'success'); }
   finally { if (old === undefined) delete process.env.GITHUB_RUN_ATTEMPT; else process.env.GITHUB_RUN_ATTEMPT = old; }
 });
+
+test('artifact-list and download outages leave the projection pending', async () => {
+  for (const stage of ['list', 'download']) {
+    const x = setup(); x.state.receipts = [check()]; x.put();
+    if (stage === 'download') x.github.rest.actions.downloadArtifact = async () => { throw new Error('HTTP 503'); };
+    else { const paginate = x.github.paginate; x.github.paginate = async (fn, args) => { if (fn === x.github.rest.actions.listWorkflowRunArtifacts) throw new Error('HTTP 503'); return paginate(fn, args); }; }
+    await assert.rejects(handle(x), /HTTP 503/);
+    assert.equal(x.state.checks.at(-1).status, 'in_progress');
+  }
+});

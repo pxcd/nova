@@ -4,6 +4,7 @@ const { createHash } = require('node:crypto');
 const { writeFileSync } = require('node:fs');
 const CHECK = 'AI review';
 const RECEIPT_CHECK = 'AI review receipt';
+class ReceiptError extends Error {}
 const SHA = /^[a-f0-9]{40}$/;
 function receiptID(pr, head, base, run) { return `ai-review-v1:${pr}:${head}:${base}:${run}`; }
 function artifactName(pr, head) { return `ai-review-v1-pr-${pr}-head-${head}`; }
@@ -31,16 +32,19 @@ function trustedRun(run, owner, branch) {
 async function readReceipt(github, owner, repo, pointer) {
   const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, { owner, repo, run_id: pointer.run, per_page: 100 });
   const matches = artifacts.filter(a => a.name === artifactName(pointer.pr, pointer.head));
-  if (matches.length !== 1 || matches[0].expired || matches[0].size_in_bytes > 100000) throw new Error('Review artifact is missing, expired or oversized');
+  if (matches.length !== 1 || matches[0].expired || matches[0].size_in_bytes > 100000) throw new ReceiptError('Review artifact is missing, expired or oversized');
   const artifact = matches[0];
   const response = await github.rest.actions.downloadArtifact({ owner, repo, artifact_id: artifact.id, archive_format: 'zip' });
   const bytes = Buffer.from(response.data);
-  if (artifact.digest && artifact.digest !== `sha256:${createHash('sha256').update(bytes).digest('hex')}`) throw new Error('Artifact digest mismatch');
-  const data = decodeArchive(bytes);
-  const review = validate(data);
-  if (data.version !== 1 || data.repository !== `${owner}/${repo}` || data.run_id !== pointer.run ||
-      data.actor?.toLowerCase() !== owner.toLowerCase() || data.attempt !== 1 ||
-      review.pr !== pointer.pr || review.head !== pointer.head || review.base !== pointer.base) throw new Error('Artifact does not attest this receipt');
+  if (artifact.digest && artifact.digest !== `sha256:${createHash('sha256').update(bytes).digest('hex')}`) throw new ReceiptError('Artifact digest mismatch');
+  let review;
+  try {
+    const data = decodeArchive(bytes);
+    review = validate(data);
+    if (data.version !== 1 || data.repository !== `${owner}/${repo}` || data.run_id !== pointer.run ||
+        data.actor?.toLowerCase() !== owner.toLowerCase() || data.attempt !== 1 ||
+        review.pr !== pointer.pr || review.head !== pointer.head || review.base !== pointer.base) throw new Error('Artifact does not attest this receipt');
+  } catch { throw new ReceiptError('Malformed or mismatched review artifact'); }
   return review;
 }
 async function currentPR(github, context, number) {
@@ -110,7 +114,10 @@ async function handle({ github, context, core, phase = 'gate' }) {
     if (!trustedRun(run, owner, branch)) continue;
     // The newest owner dispatch wins. Missing/bad artifacts never resurrect an older pass.
     try { review = await readReceipt(github, owner, repo, candidate.pointer); receipt = candidate.check; }
-    catch { reason = 'Latest recorded review has no valid immutable artifact'; }
+    catch (error) {
+      if (!(error instanceof ReceiptError)) throw error;
+      reason = 'Latest recorded review has no valid immutable artifact';
+    }
     break;
   }
   const passed = review?.verdict === 'pass';
