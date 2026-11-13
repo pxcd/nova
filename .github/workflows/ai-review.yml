@@ -2,8 +2,6 @@ name: AI review gate
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       pr:
@@ -47,7 +45,21 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/scripts
       - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: prepare
         with:
           script: |
             const { handle } = require('./.github/scripts/ai-review.cjs');
-            await handle({ github, context, core });
+            await handle({ github, context, core, phase: context.eventName === 'workflow_dispatch' ? 'prepare' : 'gate' });
+      - if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.prepare.outputs.artifact_name }}
+          path: review.json
+          if-no-files-found: error
+          retention-days: 90
+      - if: github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { handle } = require('./.github/scripts/ai-review.cjs');
+            await handle({ github, context, core, phase: 'publish' });
