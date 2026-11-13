@@ -1,0 +1,19 @@
+{
+  "name": "NOVA likeness study",
+  "kind": "Local estimated face surface and segmented depth shells",
+  "source_artwork": "../assets/nova-call-neutral-v2.png",
+  "source_sha256": "ad888188d793dc428f792ef8ba4e257c9326318d32c57aba38ba2c98b3bdd128",
+  "model_sha256": "7a97aa6a84b04c4d401613aca33f77ee1737d9f4a27a3c944122e799919936e1",
+  "builder": "tools/avatar/build_likeness.py",
+  "face_topology": "MediaPipe canonical face model, Apache-2.0; see tools/avatar/MEDIAPIPE-LICENSE.txt",
+  "original_photo_uploaded": false,
+  "limitations": [
+    "Near-frontal only; incomplete hidden head geometry",
+    "Estimated facial shape, not a calibrated scan",
+    "Hair/shoulders are textured depth shells",
+    "Eye/mouth deformations are approximate",
+    "No measured iPad frame rate or battery usage"
+  ],
+  "speech_revision": "Mouth-local lip rims with 1.5x vertical aperture; fixed corners/chin/jaw",
+  "mouth_source_sha256": "4c08c0fb8e79f471045c08dd735103daba5743aae839084f63f9f9393431fb08"
+}

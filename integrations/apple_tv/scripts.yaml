@@ -5,7 +5,9 @@ play_apple_tv_title:
     Apple channels. query is the canonical title; optional year resolves remakes.
     start_playback=true for play/watch/resume, false for details only. Uses the app
     default Play/Resume selection; playback is not verified. Catalog: Streaming Availability
-    API by Movie of the Night.'
+    API by Movie of the Night. Explicit season+episode selects the episode by an app-native deep link,
+    then reuses the ordinary profile and Play controls. No season/episode menu navigation. Both numbers
+    are required. Numbered episodes cannot combine from_start or details-only requests.'
   mode: single
   fields:
     query:
@@ -30,10 +32,63 @@ play_apple_tv_title:
           min: 1880
           max: 2200
           mode: box
+    season:
+      name: Season
+      description: Explicit positive integer; supply both season and episode for native
+        episode launch. No movement-key episode selection.
+      selector:
+        number:
+          min: 1
+          max: 999
+          step: 1
+          mode: box
+    episode:
+      name: Episode
+      description: Explicit positive integer; supply both season and episode for native
+        episode launch. No movement-key episode selection.
+      selector:
+        number:
+          min: 1
+          max: 999
+          step: 1
+          mode: box
   sequence:
+  - variables:
+      requested_season: '{{ season | default(none) }}'
+      requested_episode: '{{ episode | default(none) }}'
+  - variables:
+      numbered_episode: '{{ requested_season is not none or requested_episode is not
+        none }}'
+  - if: '{{ numbered_episode and (requested_season is not number or requested_season
+      is boolean or requested_season != requested_season | int or not 1 <= requested_season
+      <= 999 or requested_episode is not number or requested_episode is boolean or
+      requested_episode != requested_episode | int or not 1 <= requested_episode <=
+      999) }}'
+    then:
+    - variables:
+        episode_result:
+          status: invalid_episode
+          command_sent: false
+          message: Supply both season and episode as positive whole numbers. Nothing
+            was sent to the TV.
+    - stop: Invalid numbered episode.
+      response_variable: episode_result
+  - if: '{{ numbered_episode and (from_start | default(false) or not start_playback
+      | default(true)) }}'
+    then:
+    - variables:
+        episode_result:
+          status: unsupported_request
+          command_sent: false
+          message: Numbered episodes use native playback links only. Start-over is
+            a separate command after playing; details-only is unsupported for episode
+            playback links. No TV command sent.
+    - stop: Unsupported episode options.
+      response_variable: episode_result
   - action: rest_command.netflix_title_search
     data:
       query: '{{ query | trim }}'
+      series_granularity: '{{ ''episode'' if numbered_episode else ''show'' }}'
     response_variable: search_response
   - if: '{{ search_response.status != 200 or search_response.content is not sequence
       or search_response.content is string or search_response.content is mapping }}'
@@ -91,6 +146,17 @@ play_apple_tv_title:
           heard_title: '{{ query }}'
     - stop: Title needs clarification.
       response_variable: clarification_result
+  - if: '{{ numbered_episode }}'
+    then:
+    - action: script.play_streaming_episode
+      data:
+        provider: apple
+        show: '{{ matches[0] }}'
+        season: '{{ requested_season | int }}'
+        episode: '{{ requested_episode | int }}'
+      response_variable: native_episode_result
+    - stop: Numbered episode launch and shared playback handling finished.
+      response_variable: native_episode_result
   - variables:
       apple_links: '{% set ns = namespace(links=[]) %}
 
@@ -120,6 +186,29 @@ play_apple_tv_title:
             was sent.
     - stop: Apple TV+ PH link unavailable.
       response_variable: unavailable_result
+  - variables:
+      wake_requested: '{{ not is_state("media_player.bravia_xr_55x90l", "on") or not is_state("remote.sony_xr_55x90l", "on") or states("media_player.sony_xr_55x90l_2") in ["off", "unknown", "unavailable"] }}'
+  - if: '{{ wake_requested }}'
+    then:
+    - action: media_player.turn_on
+      continue_on_error: true
+      target:
+        entity_id: media_player.bravia_xr_55x90l
+  - wait_template: '{{ is_state("media_player.bravia_xr_55x90l", "on") and is_state("remote.sony_xr_55x90l", "on") and states("media_player.android_tv_10_0_0_174") not in ["off", "unknown", "unavailable"] }}'
+    timeout: '00:00:30'
+    continue_on_timeout: true
+  - if: '{{ not wait.completed }}'
+    then:
+    - variables:
+        readiness_result:
+          status: needs_tv_ready
+          command_sent: '{{ wake_requested }}'
+          wake_requested: '{{ wake_requested }}'
+          title_link_sent: false
+          playback_verified: false
+          message: TV power and control readiness were not confirmed within 30 seconds. No title link was sent. Check the TV/network; do not claim the episode is starting.
+    - stop: TV not ready for Apple launch.
+      response_variable: readiness_result
   - action: remote.send_command
     target:
       entity_id: remote.sony_xr_55x90l
@@ -133,6 +222,9 @@ play_apple_tv_title:
     data:
       command: am start -W -a android.intent.action.VIEW -d '{{ apple_links[0] }}'
         -p com.apple.atve.sony.appletv; echo NOVA_APPLE_{{ context.id }}
+  - wait_template: '{{ ("NOVA_APPLE_" ~ context.id) in (state_attr("media_player.android_tv_10_0_0_174", "adb_response") | default("", true)) }}'
+    timeout: '00:00:05'
+    continue_on_timeout: true
   - if: '{{ (''NOVA_APPLE_'' ~ context.id) not in (state_attr(''media_player.android_tv_10_0_0_174'',
       ''adb_response'') | default('''', true)) or ''Status: ok'' not in (state_attr(''media_player.android_tv_10_0_0_174'',
       ''adb_response'') | default('''', true)) }}'
@@ -146,20 +238,12 @@ play_apple_tv_title:
             claim playback.
     - stop: Apple TV intent failed.
       response_variable: launch_failure
-  - if: '{{ start_playback | default(true) }}'
-    then:
-    - delay: 00:00:05
-    - action: remote.send_command
-      target:
-        entity_id: remote.sony_xr_55x90l
-      data:
-        command: DPAD_CENTER
-    - delay: 00:00:02
-    - action: remote.send_command
-      target:
-        entity_id: remote.sony_xr_55x90l
-      data:
-        command: MEDIA_PLAY
+  - action: script.streaming_app_profile_and_play
+    data:
+      provider: apple
+      start_playback: '{{ start_playback | default(true) }}'
+      from_start: '{{ from_start | default(false) }}'
+      select_profile: '{{ select_profile | default(true) }}'
   - variables:
       launch_result:
         status: '{{ ''playback_requested'' if start_playback | default(true) else
@@ -169,8 +253,9 @@ play_apple_tv_title:
         title_link: '{{ apple_links[0] }}'
         command_sent: true
         playback_verified: false
-        message: Apple TV+ title intent delivered to the installed Sony app. Title selection
-          and dedicated Play sent only for playback requests; actual playback is not verified.
+        message: Apple TV+ title intent delivered to the installed Sony app. Title
+          selection and dedicated Play sent only for playback requests; actual playback
+          is not verified.
         year: '{{ matches[0].get(''releaseYear'', matches[0].get(''firstAirYear''))
           }}'
   - stop: Apple TV+ request sent.

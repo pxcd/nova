@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { HomeAssistant } from './ha.js';
 import { Conversations } from './conversations.js';
+import { speechCues, lipSyncReady } from './lipsync.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(join(root, '.env')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -27,6 +28,17 @@ const conversations = new Conversations();
 let busy = false;
 const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]', 'synapse.local', ...Object.values(networkInterfaces()).flat().filter(Boolean).map(n => n.address)]);
 const assets = new Map([
+  ['/talkinghead', ['avatar/talkinghead/index.html', 'text/html; charset=utf-8']],
+  ...[['study.bundle.js', 'text/javascript; charset=utf-8'], ['study.css', 'text/css; charset=utf-8'], ['reference.glb', 'model/gltf-binary'], ['nova-rig-study.glb', 'model/gltf-binary'], ['nova-rig-study.json', 'application/json'], ['nova-realistic-study.glb', 'model/gltf-binary'], ['nova-realistic-study.json', 'application/json'], ['sample.mp3', 'audio/mpeg'], ['sample.json', 'application/json'], ['ATTRIBUTION.json', 'application/json'], ['AVATAR-LICENSE.txt', 'text/plain; charset=utf-8'], ['TALKINGHEAD-LICENSE.txt', 'text/plain; charset=utf-8'], ['MAKEHUMAN-CC0-LICENSE.txt', 'text/plain; charset=utf-8']].map(([file, type]) => [`/avatar/talkinghead/${file}`, [`avatar/talkinghead/${file}`, type]]),
+  ['/visemes.js', ['visemes.js', 'text/javascript; charset=utf-8']],
+  ['/conversation-call.js', ['conversation-call.js', 'text/javascript; charset=utf-8']],
+  ['/speech-gate.js', ['speech-gate.js', 'text/javascript; charset=utf-8']],
+  ['/avatar/companion.bundle.js', ['avatar/companion.bundle.js', 'text/javascript; charset=utf-8']],
+  ['/avatar/models/nova-likeness-study.vrm', ['avatar/models/nova-likeness-study.vrm', 'model/gltf-binary']],
+  ['/avatar/models/motion-sample.vrm', ['avatar/models/motion-sample.vrm', 'model/gltf-binary']],
+  ['/avatar/assets/nova-call-neutral-v2.png', ['avatar/assets/nova-call-neutral-v2.png', 'image/png']],
+  ['/avatar/puppet.js', ['avatar/puppet.js', 'text/javascript; charset=utf-8']],
+  ...['neutral', 'blink', 'speaking'].map(name => [`/avatar/assets/nova-${name}-v1.png`, [`avatar/assets/nova-${name}-v1.png`, 'image/png']]),
   ['/', ['index.html', 'text/html; charset=utf-8']], ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']], ['/recorder.js', ['recorder.js', 'text/javascript; charset=utf-8']],
   ['/pcm-worklet.js', ['pcm-worklet.js', 'text/javascript; charset=utf-8']],
@@ -56,7 +68,7 @@ async function handle(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
   res.setHeader('Permissions-Policy', 'microphone=(self), camera=(), geolocation=()');
   const requestHost = req.headers.host || '';
   let url;
@@ -89,7 +101,7 @@ async function handle(req, res) {
       const pipeline = await ha.pipeline();
       return json(res, 200, { ready: true, voiceReady: !!pipeline.stt_engine && !!pipeline.tts_engine,
         stt: !!pipeline.stt_engine, tts: !!pipeline.tts_engine, voice: pipeline.tts_voice,
-        pipeline: pipeline.name, secure: tls });
+        pipeline: pipeline.name, secure: tls, lipSyncReady: await lipSyncReady() });
     } catch (error) { return json(res, 503, { ready: false, error: error.message }); }
   }
   if (req.method === 'GET' && url.pathname.startsWith('/api/audio/')) {
@@ -117,19 +129,23 @@ async function handle(req, res) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'X-Accel-Buffering': 'no' });
     const emit = (type, data) => { if (!res.destroyed) res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); };
     const heartbeat = setInterval(() => { if (!res.destroyed) res.write(': heartbeat\n\n'); }, 15000);
-    let tts;
+    let tts, spokenText = '';
     try {
       const pipeline = await ha.pipeline();
       emit('stage', { stage: voice ? 'transcribing' : 'thinking' });
       await ha.run({ pipeline, text, conversationId: conversationKey ? conversations.get(conversationKey) : undefined, pcm: voice ? input : undefined, signal: controller.signal,
         onEvent(type, data) {
           if (type === 'conversation') { if (conversationKey) conversations.set(conversationKey, data.id); return; }
+          if (type === 'reply') spokenText = data.text;
           if (type === 'tts') tts = data.url; else emit(type, data); } });
       if (tts) {
         const item = await ha.audio(tts, AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]));
+        let timings = null;
+        try { timings = await speechCues(item.buffer, spokenText, controller.signal); }
+        catch { controller.signal.throwIfAborted(); console.warn('Lip-sync timing unavailable; speech will use audio-reactive animation.'); }
         const id = randomBytes(24).toString('hex');
         audio.set(id, { ...item, expires: Date.now() + 5 * 60000 });
-        emit('audio', { url: `/api/audio/${id}` });
+        emit('audio', { url: `/api/audio/${id}`, visemes: timings?.cues || null, duration: timings?.duration || null, lipSyncMode: timings ? 'phonetic' : 'audio-reactive' });
       }
       emit('done', {});
     } catch (error) { emit('error', { message: error.message }); }

@@ -61,11 +61,14 @@ find_netflix_by_performer:
 resolve_streaming_title:
   alias: Find a subscribed service for a title
   description: >-
+    Never call for explicit Kodi/POV requests; use browse_kodi_series for indirect Kodi episodes.
     Read-only PH availability lookup for a named title when the user did NOT specify
     a service. Returns an existing playback tool and arguments; never controls the TV.
     Pass canonical query and preserve year, media_type, from_start, season and episode.
     Only call the returned tool when the user requested playback. Explicit-service
     requests use their existing playback tool directly. Does not search by performer.
+    After title/version clarification, preserve original numeric season and episode
+    and supply the clarified year. Never ask which service.
   mode: parallel
   max: 3
   fields:
@@ -91,8 +94,19 @@ resolve_streaming_title:
       default: false
       selector:
         boolean: null
+    episode_request:
+      name: Natural-language episode description
+      description: ONLY for indirect or relative descriptions needing catalog metadata, such as a penultimate season. Never put explicit SxEy or season/episode numbers here; pass numeric season and episode instead and OMIT episode_request, including after title clarification. Kodi fallback returns a metadata step instead of playback.
+      selector:
+        text: {}
+    latest_episode:
+      name: Latest aired episode
+      description: Preserve an explicit latest-episode request. Supported by Kodi fallback only; do not guess episode numbers.
+      selector:
+        boolean: {}
     season:
       name: Season
+      description: Absolute numeric season from the original request, including SxEy. Preserve after clarification. Never guess a season from a relative position; use episode_request for relative descriptions.
       selector:
         number:
           min: 1
@@ -100,6 +114,7 @@ resolve_streaming_title:
           mode: box
     episode:
       name: Episode
+      description: Absolute numeric episode from the original request, including SxEy. Preserve after clarification. Do not guess its season context from an indirect description.
       selector:
         number:
           min: 1
@@ -113,6 +128,8 @@ resolve_streaming_title:
         {% if media_type is defined and media_type is not none %}{% set ns.value = dict(ns.value, media_type=media_type) %}{% endif %}
         {% if season is defined and season is not none %}{% set ns.value = dict(ns.value, season=season) %}{% endif %}
         {% if episode is defined and episode is not none %}{% set ns.value = dict(ns.value, episode=episode) %}{% endif %}
+        {% if latest_episode is defined and latest_episode is not none %}{% set ns.value = dict(ns.value, latest_episode=latest_episode) %}{% endif %}
+        {% if episode_request is defined and episode_request is not none %}{% set ns.value = dict(ns.value, episode_request=episode_request) %}{% endif %}
         {{ ns.value }}
   - action: shell_command.nova_service_routing
     data:

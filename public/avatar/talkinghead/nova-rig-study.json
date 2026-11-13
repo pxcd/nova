@@ -1,0 +1,34 @@
+{
+  "kind": "Experimental NOVA likeness on the reference facial rig",
+  "model_sha256": "2d1bdd321e66b8a4ccd5df9ec80aa835c3e0728c71caf83c2a579444a94aa212",
+  "reference_sha256": "8864c504b5c11daa2f0037afffdc0815bb0fa2e6062e37a584746116a3c2f538",
+  "portrait_sha256": "ad888188d793dc428f792ef8ba4e257c9326318d32c57aba38ba2c98b3bdd128",
+  "meshes": [
+    {
+      "mesh": "EyeLeft",
+      "vertices": 120,
+      "morphs": 72,
+      "max_fit_displacement_m": 0.004874074831604958
+    },
+    {
+      "mesh": "EyeRight",
+      "vertices": 120,
+      "morphs": 72,
+      "max_fit_displacement_m": 0.007460903376340866
+    },
+    {
+      "mesh": "Wolf3D_Head",
+      "vertices": 2162,
+      "morphs": 72,
+      "max_fit_displacement_m": 0.018728366121649742
+    },
+    {
+      "mesh": "Wolf3D_Teeth",
+      "vertices": 84,
+      "morphs": 72,
+      "max_fit_displacement_m": 0.014695239253342152
+    }
+  ],
+  "license": "Derivative of CC BY-NC 4.0 reference avatar; noncommercial evaluation only",
+  "limitations": "Experimental fitted head; projected portrait; reference body remains; portrait hair is a curved surface. Not a finished realistic sculpt."
+}

@@ -58,3 +58,107 @@ force_quit_tv_app:
           Do not claim the app was stopped.'' }}'
   - stop: App force-quit result.
     response_variable: quit_result
+force_quit_tv_apps:
+  alias: Force quit selected TV media apps
+  description: 'Force-stop any requested list of supported TV apps, sequentially. No TV standby or power change. Use one call for multiple apps; app names are validated before any stop. Does not clear app data.'
+  mode: single
+  fields:
+    apps:
+      name: Apps to quit
+      required: true
+      selector:
+        select:
+          multiple: true
+          options:
+          - Netflix
+          - Apple TV
+          - Prime Video
+          - HBO Max
+          - Kodi
+  sequence:
+  - variables:
+      requested_apps: '{{ apps | default(none) }}'
+      allowed_apps: ['Netflix', 'Apple TV', 'Prime Video', 'HBO Max', 'Kodi']
+      app_results: []
+  - if: >-
+      {{ requested_apps is not sequence or requested_apps is string or requested_apps is mapping
+         or requested_apps | reject('in', allowed_apps) | list | count > 0
+         or requested_apps | unique | list | count != requested_apps | count }}
+    then:
+    - variables:
+        quit_batch_result:
+          status: invalid_apps
+          command_attempted: false
+          message: Supply a list of distinct supported app names, or omit apps for TV standby only. Nothing was changed.
+    - stop: Invalid app list.
+      response_variable: quit_batch_result
+  - repeat:
+      for_each: '{{ requested_apps }}'
+      sequence:
+      - variables:
+          quit_response: {}
+      - action: script.force_quit_tv_app
+        continue_on_error: true
+        data:
+          app: '{{ repeat.item }}'
+        response_variable: quit_response
+      - variables:
+          app_results: >-
+            {{ app_results + [dict(app=repeat.item,
+              status=quit_response.get('status', 'unconfirmed') if quit_response is mapping else 'unconfirmed',
+              force_quit_verified=quit_response.get('force_quit_verified', false) == true if quit_response is mapping else false)] }}
+  - variables:
+      quit_batch_result:
+        status: '{{ "apps_stopped" if app_results | rejectattr("force_quit_verified", "equalto", true) | list | count == 0 else "apps_stop_unconfirmed" }}'
+        app_results: '{{ app_results }}'
+        message: Requested app stops were attempted sequentially. Check each result; do not claim unconfirmed stops succeeded. TV power was not changed.
+  - stop: App batch result.
+    response_variable: quit_batch_result
+
+tv_standby:
+  alias: Put the Sony TV in standby
+  description: 'Turn off, power off, shut down, sleep or put the TV in standby. Optionally force-quit only the explicitly requested apps first, in order. One call handles the complete sequence. Does not toggle power, wake the TV, clear app data or disconnect mains power.'
+  mode: single
+  fields:
+    apps:
+      name: Apps to quit before standby
+      description: Omit for ordinary TV power off. Include only apps the user explicitly asked to quit.
+      selector:
+        select:
+          multiple: true
+          options:
+          - Netflix
+          - Apple TV
+          - Prime Video
+          - HBO Max
+          - Kodi
+  sequence:
+  - action: script.force_quit_tv_apps
+    data:
+      apps: '{{ apps | default([]) }}'
+    response_variable: quit_batch_result
+  - if: '{{ quit_batch_result.status == "invalid_apps" }}'
+    then:
+    - stop: Invalid app list; TV power unchanged.
+      response_variable: quit_batch_result
+  - variables:
+      app_results: '{{ quit_batch_result.app_results }}'
+  - action: media_player.turn_off
+    continue_on_error: true
+    target:
+      entity_id: media_player.bravia_xr_55x90l
+  - wait_template: '{{ is_state("media_player.bravia_xr_55x90l", "off") }}'
+    timeout: '00:00:08'
+    continue_on_timeout: true
+  - variables:
+      standby_result:
+        status: '{{ "standby_reported" if wait.completed else "standby_unconfirmed" }}'
+        command_attempted: true
+        standby_reported: '{{ wait.completed }}'
+        app_results: '{{ app_results }}'
+        message: >-
+          {{ 'Home Assistant reports the TV is off/in standby.' if wait.completed else
+             'The TV turn-off action was attempted, but Home Assistant has not confirmed standby. Do not claim the TV is off.' }}
+          App-stop results are separate; report any unconfirmed app stops. Mains power was not disconnected.
+  - stop: TV standby result.
+    response_variable: standby_result

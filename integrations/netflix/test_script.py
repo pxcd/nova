@@ -21,6 +21,7 @@ async def main():
     hass = HomeAssistant('/tmp/netflix-restart-check')
     scripts = yaml.safe_load(open(os.environ.get('NOVA_SCRIPTS_PATH', '/config/scripts.yaml')))
     calls, lookups = [], []
+    allow_launch = True
     response = {'status': 200, 'content': [{'title': 'White Chicks', 'showType': 'movie',
         'streamingOptions': {'ph': [{'service': {'id': 'netflix'}, 'type': 'subscription',
                                     'link': 'https://www.netflix.com/title/60034587'}]}}]}
@@ -34,7 +35,19 @@ async def main():
 
     async def capture(call):
         calls.append((call.domain, call.service, dict(call.data)))
+        if call.service == 'send_command':
+            foreground('launcher')
+        if call.service == 'play_media' and allow_launch:
+            foreground('com.netflix.ninja')
 
+    probe_count = 0
+    async def probe(call):
+        nonlocal probe_count
+        probe_count += 1
+        return {'ready': True, 'playing': True, 'position_ms': probe_count * 1000}
+
+    hass.states.async_set('media_player.sony_xr_55x90l_2', 'on')
+    hass.services.async_register('script', 'netflix_readiness_probe', probe, supports_response=SupportsResponse.ONLY)
     hass.services.async_register('rest_command', 'netflix_title_search', lookup, supports_response=SupportsResponse.ONLY)
     for domain, name in [('media_player', 'play_media'), ('media_player', 'media_play'),
                          ('media_player', 'media_pause'), ('remote', 'send_command')]:
@@ -43,7 +56,7 @@ async def main():
     helper = Script(hass, cv.SCRIPT_SCHEMA(scripts['netflix_restart_from_playback']['sequence']), 'Disabled restart check', 'script')
     foreground('com.netflix.ninja')
     result = (await script.async_run({'query': 'White Chicks'}, Context())).service_response
-    assert result['status'] == 'playback_requested' and result['play_command_sent'] is True
+    assert result['status'] == 'playback_reported' and result['play_command_sent'] is True
     assert [(domain, name) for domain, name, _ in calls] == [('remote', 'send_command'), ('media_player', 'play_media'), ('media_player', 'media_play')]
     assert calls[1][2]['media_content_id'] == 'https://www.netflix.com/watch/60034587?source=30'
 
@@ -57,6 +70,7 @@ async def main():
         assert result['status'] == 'unsupported_restart' and result['command_sent'] is False
         assert not calls and not lookups
 
+    allow_launch = False
     result = (await script.async_run({'query': 'White Chicks'}, Context())).service_response
     assert result['status'] == 'needs_netflix_foreground' and result['play_command_sent'] is False
     assert not any(name in {'media_play', 'media_pause'} for _, name, _ in calls)

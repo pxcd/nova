@@ -1,23 +1,43 @@
 import { Recorder } from './recorder.js';
+import { Companion } from './avatar/companion.bundle.js';
+import { ConversationCall } from './conversation-call.js';
+import { validateCues } from './visemes.js';
 const $ = id => document.getElementById(id);
 const recorder = new Recorder();
+const avatar = new Companion($('nova-avatar'));
+let playbackDone;
+avatar.levelSource = () => recorder.playbackLevel();
+avatar.spectrumSource = () => recorder.playbackSpectrum();
+avatar.visemeSource = () => lastVisemes ? { cues: lastVisemes, time: recorder.playbackTime() } : null;
+avatar.load(new URL('/avatar/models/nova-likeness-study.vrm', location.href).href).then(() => { $('avatar-fallback').hidden = true; $('model-file').disabled = false; }).catch(() => { $('nova-avatar').hidden = true; notice('3D could not load. Voice is still available.'); });
 let conversationKey = crypto.randomUUID();
-let readiness, busy = false, recording = false, starting = false, held = false, timer, controller, lastAudio;
-let micReady = false, recordingCancelled = false;
+let readiness, busy = false, controller, lastAudio;
+let lastVisemes = null;
+
 const stages = {
-  idle: ['Hold to talk', 'Press, speak, release. NOVA will take it from there.'],
-  recording: ['I’m listening.', 'Release when you’re done.'],
+  idle: ['NOVA is here.', 'Start a conversation, then speak naturally.'],
+  connecting: ['Connecting your microphone…', 'One moment.'],
+  listening: ['I’m listening.', 'Speak naturally. A short pause sends your message.'],
+  muted: ['Microphone muted.', 'Unmute when you’re ready.'],
+  recording: ['I’m listening.', 'Pause briefly when you’ve finished.'],
   transcribing: ['Getting your words.', 'Turning a little sound into a little sense.'],
   thinking: ['On it.', 'Checking in with your home.'],
   voicing: ['Finding my voice.', 'Your reply is on its way.'],
   speaking: ['NOVA has the floor.', 'You can stop the voice below.']
 };
 function state(name, customHint) {
+  avatar.setState(name);
   $('voice-console').dataset.state = name;
   const [title, hint] = stages[name] || stages.idle;
   $('status').textContent = title; $('hint').textContent = customHint || hint;
-  $('talk').disabled = busy || !micReady || !readiness?.voiceReady;
-  $('send').disabled = busy || recording || starting || !readiness?.ready;
+  $('talk').disabled = !call.active && (busy || name === 'speaking' || call.pending || !readiness?.voiceReady);
+  $('replay').disabled = busy || name === 'speaking';
+  $('talk').textContent = call.active ? 'End conversation' : 'Start conversation';
+  $('talk').classList.toggle('end-call', call.active);
+  $('mute').hidden = !call.active;
+  $('mute').textContent = call.muted ? 'Unmute' : 'Mute';
+  $('mute').setAttribute('aria-pressed', String(call.muted));
+  $('send').disabled = busy || call.pending || !readiness?.ready;
   $('cancel').hidden = !busy;
   $('stop-audio').hidden = name !== 'speaking';
 }
@@ -42,9 +62,9 @@ async function refresh() {
     readiness = await jsonFetch('/api/status');
     $('connection').textContent = 'Connected to home'; $('connection-dot').className = 'dot online';
     $('pipeline-label').textContent = `SYNAPSE / ${readiness.pipeline.toUpperCase()}`;
-    $('enable-mic').hidden = micReady || !readiness.voiceReady;
+    $('enable-mic').hidden = true;
     notice(!readiness.voiceReady ? 'The assistant needs speech-to-text and text-to-speech in Home Assistant. You can type while those are being configured.' : !isSecureContext ? 'Use HTTPS for the microphone on your iPhone.' : '');
-    state('idle', !micReady ? 'Enable your microphone below, or type a message.' : undefined);
+    state('idle');
   } catch (error) {
     readiness = { ready: false }; $('connection').textContent = 'Home unavailable'; $('connection-dot').className = 'dot offline';
     notice(error.message); state('idle', 'Check the connection, then reload NOVA.');
@@ -65,13 +85,9 @@ $('login-form').addEventListener('submit', async e => {
     $('password').value = ''; await initialize();
   } catch (error) { $('login-error').textContent = error.message; }
 });
-$('enable-mic').addEventListener('click', async () => {
-  try { await recorder.prepare(); micReady = true; $('enable-mic').hidden = true; notice(''); state('idle'); }
-  catch (error) { notice(error.name === 'NotAllowedError' ? 'Microphone access was denied. Allow it in Safari’s website settings, then try again.' : error.message); }
-});
 async function run(payload, voice = false) {
   busy = true; controller = new AbortController(); state(voice ? 'transcribing' : 'thinking'); notice('');
-  lastAudio = null; $('replay').hidden = true; recorder.stopPlayback();
+  lastAudio = null; lastVisemes = null; $('replay').hidden = true; recorder.stopPlayback();
   try {
     const r = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': voice ? 'application/octet-stream' : 'application/json', 'X-NOVA-Conversation': conversationKey },
       body: voice ? payload : JSON.stringify({ text: payload }), signal: controller.signal });
@@ -90,7 +106,11 @@ async function run(payload, voice = false) {
         if (type === 'transcript') message('user', data.text);
         if (type === 'reply') message('assistant', data.text);
         if (type === 'error') throw new Error(data.message);
-        if (type === 'audio') audioUrl = data.url;
+        if (type === 'audio') {
+          audioUrl = data.url;
+          try { lastVisemes = data.visemes ? validateCues(data.visemes, data.duration) : null; } catch { lastVisemes = null; }
+          $('model-label').textContent = lastVisemes ? 'NOVA · speech-synced' : 'NOVA · audio reactive';
+        }
       }
       if (done) break;
     }
@@ -100,7 +120,7 @@ async function run(payload, voice = false) {
       lastAudio = await response.arrayBuffer(); $('replay').hidden = false;
     }
     busy = false; state('idle');
-    if (lastAudio) { try { await play(); } catch { notice('Tap Replay response to hear NOVA.'); } }
+    if (lastAudio) { try { await play(); } catch { state('idle'); notice('Tap Replay response to hear NOVA.'); } }
   } catch (error) {
     if (error.name !== 'AbortError') { message('assistant', error.message, true); notice(error.message); }
     busy = false; state('idle');
@@ -108,48 +128,52 @@ async function run(payload, voice = false) {
 }
 async function play() {
   state('speaking');
-  await recorder.play(lastAudio, () => state('idle'));
+  await new Promise((resolve, reject) => {
+    playbackDone = resolve;
+    recorder.play(lastAudio, () => { playbackDone = null; state('idle'); resolve(); })
+      .catch(error => { playbackDone = null; state('idle'); reject(error); });
+  });
 }
-async function begin() {
-  if (busy || starting || recording || !micReady) return;
-  starting = true; held = true; recordingCancelled = false;
-  try {
-    await recorder.start(); starting = false;
-    if (recordingCancelled) { recorder.stop(); state('idle'); return; }
-    recording = true; state('recording'); notice('');
-    if (!held) return finish();
-    timer = setTimeout(finish, 45000);
-  } catch (error) { starting = false; held = false; notice(error.message); state('idle'); }
-}
-function finish() {
-  held = false;
-  if (!recording) return;
-  clearTimeout(timer); recording = false;
-  const pcm = recorder.stop();
-  if (pcm.byteLength < 3200) { state('idle'); notice('Hold the button while you speak, then release.'); return; }
-  run(pcm, true);
-}
-$('talk').addEventListener('pointerdown', e => {
-  if (e.button !== 0) return;
-  e.preventDefault(); $('talk').setPointerCapture(e.pointerId); begin();
+const call = new ConversationCall(recorder, {
+  onState: state,
+  onTurn: pcm => run(pcm, true),
+  onError: error => notice(error.name === 'NotAllowedError' ? 'Allow microphone access, then start the conversation again.' : error.message),
+  onStop: () => { controller?.abort(); recorder.stopPlayback(); playbackDone?.(); playbackDone = null; }
 });
-$('talk').addEventListener('pointerup', finish);
-$('talk').addEventListener('pointercancel', () => { held = false; recordingCancelled = true; if (recording) { clearTimeout(timer); recording = false; recorder.stop(); state('idle'); notice('Recording cancelled.'); } });
-$('talk').addEventListener('contextmenu', e => e.preventDefault());
-$('talk').addEventListener('keydown', e => { if ([' ', 'Enter'].includes(e.key)) { e.preventDefault(); if (!e.repeat) begin(); } });
-$('talk').addEventListener('keyup', e => { if ([' ', 'Enter'].includes(e.key)) { e.preventDefault(); finish(); } });
+$('talk').addEventListener('click', () => {
+  notice('');
+  if (call.active) call.stop(); else call.start();
+});
+$('mute').addEventListener('click', async () => { await call.setMuted(!call.muted); state($('voice-console').dataset.state); });
+$('chat-toggle').addEventListener('click', () => {
+  const open = $('conversation').hidden;
+  $('conversation').hidden = !open;
+  $('chat-toggle').setAttribute('aria-expanded', String(open));
+});
+$('model-file').addEventListener('change', async e => {
+  const file = e.target.files[0]; if (!file) return;
+  if (file.size > 50 * 1024 * 1024) { notice('Choose a VRM file smaller than 50 MB.'); return; }
+  const url = URL.createObjectURL(file);
+  try { await avatar.loadModel(url); $('model-label').textContent = 'Your avatar'; notice(''); }
+  catch (error) { notice(error.message || 'This avatar could not be loaded.'); }
+  finally { URL.revokeObjectURL(url); }
+});
 $('text-form').addEventListener('submit', async e => {
-  e.preventDefault(); const text = $('message').value.trim(); if (!text || busy || recording || starting) return;
+  e.preventDefault(); const text = $('message').value.trim(); if (!text || busy || call.pending) return;
+  if (call.active) call.stop();
   recorder.unlock().catch(() => {}); message('user', text); $('message').value = ''; await run(text);
 });
 $('cancel').addEventListener('click', () => controller?.abort());
-$('stop-audio').addEventListener('click', () => { recorder.stopPlayback(); state('idle'); });
-$('replay').addEventListener('click', () => play().catch(error => { notice(error.message); state('idle'); }));
+$('stop-audio').addEventListener('click', () => { recorder.stopPlayback(); playbackDone?.(); playbackDone = null; state('idle'); });
+$('replay').addEventListener('click', async () => {
+  const resume = call.active && !call.muted;
+  if (resume) await call.setMuted(true);
+  try { await play(); } catch (error) { notice(error.message); state('idle'); }
+  finally { if (resume && call.active) await call.setMuted(false); }
+});
 $('clear').addEventListener('click', () => { conversationKey = crypto.randomUUID(); $('messages').replaceChildren(); lastAudio = null; $('replay').hidden = true; });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    held = false; recordingCancelled = true;
-    if (recording) { clearTimeout(timer); recording = false; recorder.stop(); state('idle'); notice('Recording cancelled when NOVA left the screen.'); }
-  }
+  if (document.hidden && call.active) { call.stop(); notice('Conversation ended when NOVA left the screen.'); }
 });
+window.addEventListener('pagehide', e => { call.stop(); if (!e.persisted) avatar.destroy(); });
 initialize();

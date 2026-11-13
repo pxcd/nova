@@ -5,3 +5,16 @@
 Use for explicit “force quit Prime Video” / “kill the Kodi app” requests, not “restart this episode.” Movie/episode start-over requests still use the corresponding playback tool's `from_start` flag. Both GPT-OSS and Qwen have that distinction in their instructions.
 
 The HA-runtime test mocks all services and covers all five package mappings, unknown/injection input rejection, and pending/stale/error completion. A live Prime Video force-quit was verified while Netflix remained in the foreground, preparing Prime for a separate cold-start playback test without opening TV Settings.
+
+`script.force_quit_tv_apps` accepts an `apps` list using the same supported names
+and iterates sequentially. The entire list is validated before any app is stopped;
+individual failures are reported without skipping the remaining requested apps.
+It never changes TV power.
+
+`script.tv_standby` accepts the same optional list (empty by default), runs that
+batch, then calls `media_player.turn_off` on the Bravia entity. Turn off, power off,
+shut down, sleep and standby all map to this action. It does not toggle power,
+wake the TV, clear app data or disconnect mains power. The result distinguishes
+HA-reported standby from an unconfirmed request and includes each app-stop result.
+Expose both scripts to Assist. `test_power.py` runs with mocked HA services;
+set `NOVA_APP_CONTROL_SCRIPTS_PATH` to test a staged scripts file without deployment.

@@ -10,8 +10,20 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "start:v2": "node versioned-server.js",
+    "build:v2": "esbuild public/v2/companion.js --bundle --format=esm --minify --outfile=public/v2/companion.bundle.js --legal-comments=eof",
     "test": "node --test",
     "setup:https": "node scripts/setup-https.js",
-    "fm:bridge": "node scripts/fm-bridge.js"
+    "fm:bridge": "node scripts/fm-bridge.js",
+    "build:avatar": "esbuild public/avatar/companion.js --bundle --format=esm --minify --outfile=public/avatar/companion.bundle.js --legal-comments=eof",
+    "build:talkinghead": "esbuild public/avatar/talkinghead/study.js --bundle --format=esm --minify --outfile=public/avatar/talkinghead/study.bundle.js --legal-comments=eof"
+  },
+  "dependencies": {
+    "@met4citizen/talkinghead": "1.7.0",
+    "@pixiv/three-vrm": "3.5.5",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
   }
 }

@@ -105,12 +105,16 @@ fresh lookup. An unavailable/failed playback result stops the request rather tha
 trying another provider blindly. Explicit-service requests bypass routing, keeping
 their current playback paths. The separate Netflix performer flow stays unchanged.
 
-Requested settings are preserved: numbered episodes route only to Netflix, which is
-the only configured streaming tool with numbered-episode support. Combined Netflix play/restart is unsupported; current-player restart for Netflix, HBO, Prime and Apple TV+ is handled separately by dedicated seek tools. The resolver selects the first eligible service supporting the settings,
+Requested settings are preserved: explicit numbered episodes route to Netflix, HBO Max,
+Apple TV+ or Prime Video using provider-specific episode links. Combined numbered-episode
+play/restart is unsupported; current-player restart for Netflix, HBO, Prime and Apple TV+ is handled separately by dedicated seek tools. The resolver selects the first eligible service supporting the settings,
 or returns `unsupported_request`. Netflix/HBO cannot accept a release-year filter,
 so same-name versions available on the same service are refused even after year
 clarification rather than risking the wrong remake. No playback ID or URL is passed
 from the resolver to a device.
+
+Episode selectors restrict title matching to series before ambiguity handling.
+Same-name movies are excluded; distinct series versions still require clarification.
 
 Deployment:
 
@@ -133,3 +137,37 @@ python3 -m unittest discover -s integrations/catalog -p test_discovery.py
 `test_routing_script.py` is the optional HA-runtime wrapper check. Run it inside
 HA with `NOVA_CATALOG_SCRIPTS_PATH` pointing to the staged catalog scripts. Shell
 responses are mocked; it does not register or call TV services.
+
+An explicit `latest_episode` request is preserved by Kodi fallback. It is incompatible with explicit season/episode numbers and must describe a series. Current streaming title tools do not resolve latest episodes; if the title has a configured subscription offer, the resolver returns `unsupported_request` rather than silently dropping latest or bypassing that offer.
+
+Indirect episode descriptions are preserved in `episode_request` during service discovery. Kodi fallback returns `episode_lookup_required` with the catalog tool and canonical title/year, not a playback tool or guessed numbers. Even numeric fields supplied alongside the description do not authorize direct playback. Absolute numeric requests without an indirect description retain their normal path. Relative descriptions for other providers return unsupported instead of silently resuming. The shared prompt prioritizes service scope and requires reading season numbers before applying a relative season filter.
+
+## Native numbered episodes
+
+Merge `play_streaming_episode` from `episode_scripts.yaml`,
+`streaming_app_profile_and_play` from `launch_controls.yaml`, and the updated public
+Apple/HBO/Prime title scripts into HA. Keep both helpers hidden from Assist. Reload
+scripts and apply the shared agent prompt. Both positive integer `season` and
+`episode` are required; numbered requests reject `from_start` and details-only mode.
+
+These three episode branches send exactly one package-targeted ADB VIEW intent
+using an episode-specific PH subscription link. After link validation, they explicitly
+wake the TV if needed and wait up to 30 seconds for power, remote and ADB readiness.
+If readiness fails, no episode intent is sent. HBO establishes the same fresh-app
+state as ordinary title launches; all three providers go Home before the episode
+intent. After confirmed intent delivery, both ordinary titles and explicit episodes
+call the same provider-specific profile/Play helper. Prime retains `select_profile`.
+Episode selection remains entirely in the deep link, with no season/episode menu
+navigation. Missing, shared, parent-show, rental or unsupported links stop before
+wake or navigation. Failed launch confirmation never sends profile/Play controls.
+The result is `playback_requested` with `playback_verified: false`: the shared
+controls still use the existing delays, not visual profile or playback detection.
+
+Missing season/episode metadata returns `episode_metadata_unavailable`; a missing
+or unsupported episode URL returns `episode_link_unavailable` with
+`availability_verified: false`. Neither proves regional unavailability. Do not
+translate these lookup limitations into a claim that the episode is absent from PH.
+
+`test_episode_scripts.py` exercises these branches in the HA template runtime with
+mocked catalog and device services; it never controls the TV. Live app handling of
+episode links must be confirmed separately.

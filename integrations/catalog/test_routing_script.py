@@ -34,6 +34,10 @@ async def main():
                'from_start': True, 'year': 2013, 'media_type': 'series'}
     await script.async_run(request, Context())
     assert calls[-1]['request_payload'] == request
+    await script.async_run({'query':'Firefly','latest_episode':True}, Context())
+    assert calls[-1]['request_payload']['latest_episode'] is True
+    await script.async_run({'query':'South Park','episode_request':'first episode of the penultimate season'}, Context())
+    assert calls[-1]['request_payload']['episode_request']=='first episode of the penultimate season'
     for invalid in ({'returncode': 1, 'stdout': '{}'}, {'returncode': 0, 'stdout': 'bad json'},
                     {'returncode': 0, 'stdout': '[]'}, {'returncode': 0, 'stdout': '{}'}):
         output = invalid

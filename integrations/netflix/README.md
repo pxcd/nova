@@ -30,13 +30,33 @@ oversized catalog data, normal Play, and preservation of explicit restart.
 ## Normal playback
 
 Ordinary movie and explicit episode launches use `/watch/<id>?source=30`. Series
-resume retains `/title/<id>?source=30`. All ordinary
-launches send Home → selected link, wait up to 15 seconds
-for Netflix foreground, allow two seconds to settle, then send a dedicated
-`media_player.media_play` through Android TV Remote. No OK or directional selection
-is used. If Netflix is not confirmed in foreground, Play is blocked. Successful
-command delivery returns `playback_requested`, `play_command_sent=true`, and
-`playback_verified=false`.
+resume retains `/title/<id>?source=30`. All ordinary launches now wake the TV through Bravia when its remote/player is
+off or unavailable, wait up to 30 seconds for remote/player connectivity, send
+Home and require its foreground transition (5 seconds), then launch the link and
+wait up to 20 seconds for Netflix foreground. No fixed splash-screen delay or
+profile OK is used. A hidden read-only `netflix_readiness_probe` invokes the
+already installed NovaSeek helper in `inspect` mode, waiting up to 10 seconds
+for a seek-capable Netflix session. One dedicated Play is sent while Netflix is
+still foreground, even if that session is absent (title pages can lack one).
+Up to five fresh probes then require consecutive playing samples with position
+advancing by at least 500 ms, with a one-second polling interval. A single transient
+playing sample or a frozen position does not count. If a fresh probe confirms a
+paused Netflix player, one additional dedicated Play is allowed; no further retries
+or selection keys are sent.
+
+Wake/Home/foreground timeouts stop at that stage. An absent/stale/malformed probe
+or no playing state returns `needs_netflix_ready`, not playback success. This
+cannot distinguish splash, title page and profile picker. The user must confirm
+the visible screen before the agent offers profile selection; no automatic OK,
+arrow navigation or retry is attempted. Pending title/episode stays in conversation.
+`playback_reported` means only a fresh Netflix session reports playing; it does
+not prove the requested title/episode, so `playback_verified` and `title_verified`
+remain false. The native probe requires `/data/local/tmp/nova-seek.jar`.
+
+Deploy the updated `play_netflix_title` and `netflix_readiness_probe` together,
+reload scripts, keep the probe hidden from Assist and apply the shared prompt.
+`test_readiness.py` covers mocked standby wake, transition failures, bounded
+polling and stale native responses. No cold-start behavior is live-confirmed yet.
 
 The user confirmed dedicated Play started Joe Rogan: Burn the Boats after both
 title and watch links had left it on the info/rating screen. A later warm switch using a title-page link plus Play resumed Edge of Tomorrow

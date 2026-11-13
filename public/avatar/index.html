@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NOVA · Avatar study</title><link rel="stylesheet" href="./studio.css">
+</head>
+<body>
+  <header><span>NOVA</span><span>AVATAR STUDY / 01</span></header>
+  <main>
+    <section class="portrait" aria-label="Animated NOVA portrait">
+      <canvas width="1280" height="1280" aria-label="NOVA's animated head"></canvas>
+      <p id="status" role="status">Loading artwork…</p>
+    </section>
+    <section class="controls">
+      <p class="eyebrow">A LITTLE LIFE</p>
+      <h1>Meet NOVA.</h1>
+      <p>A first movement study: breathing, blinking, and a voice. Her face stays yours to shape.</p>
+      <div class="buttons"><button id="blink" disabled>Blink</button><button id="preview" disabled>Preview talking</button></div>
+      <label>Head tilt<input id="tilt" type="range" min="-8" max="8" value="0" step="0.1"></label>
+      <label>Try a speech recording<input id="audio-file" type="file" accept="audio/*" disabled></label>
+      <audio controls></audio>
+      <p class="note">Recordings stay on this device. Talking preview is simulated; a loaded recording drives the mouth from its actual sound. This study does not send commands to your TV.</p>
+      <p id="error" role="alert"></p>
+    </section>
+  </main>
+  <script type="module" src="./studio.js"></script>
+</body>
+</html>

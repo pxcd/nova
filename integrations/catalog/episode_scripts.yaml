@@ -1,0 +1,235 @@
+play_streaming_episode:
+  alias: Native streaming episode launch (internal)
+  description: Resolve an exact PH subscription episode, wake the TV, launch its app-native link and reuse the provider's ordinary profile/Play controls. Never navigate season/episode lists. Keep hidden from Assist.
+  mode: single
+  sequence:
+  - variables:
+      app_packages:
+        apple: com.apple.atve.sony.appletv
+        hbo: com.wbd.stream
+        prime: com.amazon.amazonvideo.livingroom
+      episode_patterns:
+        apple: '^https://tv[.]apple[.]com/(?:[a-z]{2}/)?episode/[A-Za-z0-9%._~-]+/umc[.]cmc[.][A-Za-z0-9]+/?(?:[?](?:showId|playableId)=[A-Za-z0-9%._~:-]+(?:&(?:showId|playableId)=[A-Za-z0-9%._~:-]+)*)?$'
+        hbo: '^https://play[.](?:hbomax|max)[.]com/video/watch/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}/?$'
+        prime: '^https://app[.]primevideo[.]com/detail[?]gti=amzn1[.]dv[.]gti[.][A-Za-z0-9-]+(?:&action=play)?$'
+  - if: '{{ provider not in app_packages or show is not mapping or show.get("showType") != "series" or season is not number or season is boolean or season != season | int or not 1 <= season <= 999 or episode is not number or episode is boolean or episode != episode | int or not 1 <= episode <= 999 }}'
+    then:
+    - variables:
+        episode_result:
+          status: invalid_episode
+          command_sent: false
+          message: A supported provider, series and positive integer season/episode are required. No TV command sent.
+    - stop: Invalid native episode request.
+      response_variable: episode_result
+  - variables:
+      season_matches: >-
+        {% set ns = namespace(items=[]) %}
+        {% for part in show.get('seasons', []) %}
+          {% if part.get('title', '') | lower | trim == 'season ' ~ (season | int) %}
+            {% set ns.items = ns.items + [part] %}
+          {% endif %}
+        {% endfor %}{{ ns.items }}
+  - if: '{{ season_matches | count != 1 }}'
+    then:
+    - variables:
+        episode_result:
+          status: episode_metadata_unavailable
+          command_sent: false
+          message: The catalog does not uniquely identify this season. This is a metadata gap, not proof of regional unavailability. No TV command sent.
+    - stop: Numbered season unavailable.
+      response_variable: episode_result
+  - variables:
+      episode_items: '{{ season_matches[0].get("episodes", []) }}'
+  - if: '{{ episode_items is not sequence or episode_items is string or episode_items is mapping or episode | int > episode_items | count }}'
+    then:
+    - variables:
+        episode_result:
+          status: episode_metadata_unavailable
+          command_sent: false
+          message: The catalog does not list this episode in the numbered season. This does not prove it is unavailable in the app. No TV command sent.
+    - stop: Numbered episode unavailable.
+      response_variable: episode_result
+  - variables:
+      selected_episode: '{{ episode_items[(episode | int) - 1] }}'
+  - if: '{{ selected_episode is not mapping }}'
+    then:
+    - variables:
+        episode_result:
+          status: episode_metadata_unavailable
+          command_sent: false
+          message: Invalid episode metadata. No TV command sent.
+    - stop: Invalid catalog episode.
+      response_variable: episode_result
+  - variables:
+      non_episode_links: >-
+        {% set ns = namespace(links=[]) %}
+        {% for option in show.get('streamingOptions', {}).get('ph', []) %}
+          {% if option.get('service', {}).get('id') == provider %}
+            {% for key in ['link', 'videoLink'] %}
+              {% set link = option.get(key) or '' %}
+              {% if link %}{% set ns.links = ns.links + [link | regex_replace('&action=play$', '') | regex_replace('/$', '')] %}{% endif %}
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+        {% for other in episode_items %}
+          {% if loop.index != episode | int and other is mapping %}
+            {% for option in other.get('streamingOptions', {}).get('ph', []) %}
+              {% if option.get('service', {}).get('id') == provider %}
+                {% for key in ['link', 'videoLink'] %}
+                  {% set link = option.get(key) or '' %}
+                  {% if link %}{% set ns.links = ns.links + [link | regex_replace('&action=play$', '') | regex_replace('/$', '')] %}{% endif %}
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        {% endfor %}{{ ns.links | unique | list }}
+  - variables:
+      episode_links: >-
+        {% set ns = namespace(links=[]) %}
+        {% for option in selected_episode.get('streamingOptions', {}).get('ph', []) %}
+          {% if option.get('service', {}).get('id') == provider and option.get('type') == 'subscription' %}
+            {% set video = option.get('videoLink') or '' %}
+            {% set detail = option.get('link') or '' %}
+            {% set link = video if video | regex_match(episode_patterns[provider]) else detail %}
+            {% if link | regex_match(episode_patterns[provider]) and (link | regex_replace('&action=play$', '') | regex_replace('/$', '')) not in non_episode_links %}
+              {% set ns.links = ns.links + [link] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}{{ ns.links | unique | list }}
+  - if: '{{ provider == "apple" and episode_links | count == 0 }}'
+    then:
+    - variables:
+        apple_show_links: >-
+          {% set ns = namespace(links=[]) %}
+          {% for option in show.get('streamingOptions', {}).get('ph', []) %}
+            {% set link = option.get('link') or '' %}
+            {% if option.get('service', {}).get('id') == 'apple' and option.get('type') == 'subscription' and link | regex_match('^https://tv[.]apple[.]com/ph/show/[A-Za-z0-9%._~-]+/umc[.]cmc[.][A-Za-z0-9]+/?$') %}
+              {% set ns.links = ns.links + [link] %}
+            {% endif %}
+          {% endfor %}{{ ns.links | unique | list }}
+    - if: '{{ apple_show_links | count == 1 }}'
+      then:
+      - action: shell_command.nova_service_routing
+        continue_on_error: true
+        data:
+          request_payload:
+            action: apple_episode
+            show_link: '{{ apple_show_links[0] }}'
+            season: '{{ season | int }}'
+            episode: '{{ episode | int }}'
+        response_variable: apple_metadata_output
+      - variables:
+          apple_metadata: '{{ (apple_metadata_output | default({})).get("stdout", "") | from_json({}) }}'
+      - if: '{{ apple_metadata is mapping and apple_metadata.get("status") == "episode_resolved" and apple_metadata.get("season") == season and apple_metadata.get("episode") == episode and apple_metadata.get("title_link", "") | regex_match(episode_patterns.apple) }}'
+        then:
+        - variables:
+            episode_links: '{{ [apple_metadata.title_link] }}'
+            selected_episode: '{{ dict(selected_episode, title=apple_metadata.episode_title) }}'
+  - if: '{{ episode_links | count != 1 }}'
+    then:
+    - variables:
+        episode_result:
+          status: episode_link_unavailable
+          availability_verified: false
+          command_sent: false
+          title: '{{ show.title }}'
+          season: '{{ season | int }}'
+          episode: '{{ episode | int }}'
+          message: The catalog did not supply a unique supported PH subscription link for this episode. This is a missing or unsupported episode link, NOT proof that the episode is unavailable in the Philippines. Explain the link limitation; do not claim regional unavailability or launch the series instead. No TV command sent.
+    - stop: Native episode link unavailable.
+      response_variable: episode_result
+  - variables:
+      wake_requested: '{{ not is_state("media_player.bravia_xr_55x90l", "on") or not is_state("remote.sony_xr_55x90l", "on") or states("media_player.sony_xr_55x90l_2") in ["off", "unknown", "unavailable"] }}'
+  - if: '{{ wake_requested }}'
+    then:
+    - action: media_player.turn_on
+      continue_on_error: true
+      target:
+        entity_id: media_player.bravia_xr_55x90l
+  - wait_template: '{{ is_state("media_player.bravia_xr_55x90l", "on") and is_state("remote.sony_xr_55x90l", "on") and states("media_player.android_tv_10_0_0_174") not in ["off", "unknown", "unavailable"] }}'
+    timeout: '00:00:30'
+    continue_on_timeout: true
+  - if: '{{ not wait.completed }}'
+    then:
+    - variables:
+        episode_result:
+          status: needs_tv_ready
+          command_sent: '{{ wake_requested }}'
+          wake_requested: '{{ wake_requested }}'
+          episode_link_sent: false
+          playback_verified: false
+          message: TV power and control readiness were not confirmed within 30 seconds. No episode link was sent. Check the TV/network; do not claim the episode is starting.
+    - stop: TV not ready for episode launch.
+      response_variable: episode_result
+  - if: '{{ provider == "hbo" }}'
+    then:
+    - action: androidtv.adb_command
+      continue_on_error: true
+      target:
+        entity_id: media_player.android_tv_10_0_0_174
+      data:
+        command: am force-stop com.wbd.stream && echo NOVA_EPISODE_STOP_{{ context.id }}
+    - wait_template: '{{ ("NOVA_EPISODE_STOP_" ~ context.id) in (state_attr("media_player.android_tv_10_0_0_174", "adb_response") | default("", true)) }}'
+      timeout: '00:00:05'
+      continue_on_timeout: true
+    - if: '{{ not wait.completed }}'
+      then:
+      - variables:
+          episode_result:
+            status: failed
+            command_sent: true
+            episode_link_sent: false
+            playback_verified: false
+            message: Could not establish a fresh HBO launch. No episode link or profile/Play commands sent.
+      - stop: HBO cold launch failed.
+        response_variable: episode_result
+  - action: remote.send_command
+    target:
+      entity_id: remote.sony_xr_55x90l
+    data:
+      command: HOME
+  - delay: '00:00:01'
+  - action: androidtv.adb_command
+    continue_on_error: true
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: >-
+        am start -W -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d '{{ episode_links[0] }}' -p {{ app_packages[provider] }}; echo NOVA_EPISODE_{{ context.id }}
+  - wait_template: '{{ ("NOVA_EPISODE_" ~ context.id) in (state_attr("media_player.android_tv_10_0_0_174", "adb_response") | default("", true)) }}'
+    timeout: '00:00:05'
+    continue_on_timeout: true
+  - if: '{{ not wait.completed or "Status: ok" not in (state_attr("media_player.android_tv_10_0_0_174", "adb_response") | default("", true)) }}'
+    then:
+    - variables:
+        episode_result:
+          status: failed
+          command_sent: true
+          playback_verified: false
+          message: Episode launch was not confirmed by a fresh ADB result. No profile/Play commands or content fallback were sent; do not claim playback.
+    - stop: Native episode launch unconfirmed.
+      response_variable: episode_result
+  - action: script.streaming_app_profile_and_play
+    data:
+      provider: '{{ provider }}'
+      start_playback: true
+      from_start: false
+      select_profile: '{{ select_profile | default(true) }}'
+  - variables:
+      episode_result:
+        status: playback_requested
+        title: '{{ show.title }}'
+        season: '{{ season | int }}'
+        episode: '{{ episode | int }}'
+        episode_title: '{{ selected_episode.get("title", "") }}'
+        title_link: '{{ episode_links[0] }}'
+        command_sent: true
+        wake_requested: '{{ wake_requested }}'
+        tv_ready: true
+        episode_link_sent: true
+        profile_play_sequence_sent: true
+        playback_verified: false
+        episode_selection: native_deep_link
+        message: The exact episode deep link was delivered, followed by the same profile/Play controls used for ordinary titles. Playback was requested but is not independently verified. No season or episode menu navigation was used; do not claim confirmed playback.
+  - stop: Native episode intent delivered.
+    response_variable: episode_result

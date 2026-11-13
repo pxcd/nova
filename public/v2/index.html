@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f4ef">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="NOVA">
+  <meta name="description" content="NOVA Operates Voice Automations. Your home, a little more conversational.">
+  <link rel="manifest" href="/v2/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/v2/style.css">
+  <title>NOVA v2 — Voice Automations</title>
+  <script type="module" src="/v2/app.js"></script>
+</head>
+<body class="companion-view">
+  <main class="shell">
+    <header class="masthead">
+      <a class="wordmark" href="/v2" aria-label="NOVA v2 home">NOVA<span>✳</span></a>
+      <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection">Connecting</span></div>
+    </header>
+    <section id="login-panel" class="login-panel" hidden>
+      <p class="eyebrow">YOUR HOME. YOUR ASSISTANT.</p>
+      <h1>A familiar voice.<br>A private connection.</h1>
+      <form id="login-form">
+        <label for="password">NOVA password</label>
+        <div class="input-row"><input id="password" type="password" autocomplete="current-password" required placeholder="Enter your password"><button class="solid" type="submit">Unlock <span>↗</span></button></div>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+    <div id="assistant" hidden>
+      <section class="hero">
+        <div id="avatar-stage" class="avatar-stage">
+          <img id="avatar-fallback" src="/avatar/assets/nova-call-neutral-v2.png" alt="NOVA portrait reference">
+          <div id="nova-avatar" role="img" aria-label="NOVA v2 fitted head"></div>
+        </div>
+        <div class="call-identity"><strong>NOVA</strong><span id="model-label">NOVA v2 · fitted head</span></div>
+        <div class="voice-console" id="voice-console" data-state="idle">
+          <button id="talk" class="talk" type="button" disabled>Start conversation</button>
+          <button id="mute" type="button" hidden>Mute</button>
+          <button id="chat-toggle" type="button" aria-expanded="false" aria-controls="conversation">Chat</button>
+        </div>
+        <div class="status-block" aria-live="polite"><h2 id="status">Getting ready</h2><p id="hint">Checking your Home Assistant connection.</p></div>
+        <div class="voice-actions"><button id="enable-mic" class="text-button" hidden>Enable microphone ↗</button><button id="replay" class="text-button" hidden>Replay response ↻</button><button id="cancel" class="text-button" hidden>Stop waiting ×</button><button id="stop-audio" class="text-button" hidden>Stop speaking ×</button></div>
+        
+        <p id="notice" class="notice" role="status" hidden></p>
+      </section>
+      <section id="conversation" class="conversation" aria-label="Conversation" hidden>
+        <div class="section-heading"><h2>THE CONVERSATION</h2><button id="clear" class="text-button">Clear</button></div>
+        <div id="messages" class="messages" aria-live="polite"><p id="empty" class="empty">Ask NOVA anything.<br><span>Or ask NOVA whatever’s on your mind.</span></p></div>
+        <form id="text-form" class="composer"><label class="sr-only" for="message">Message NOVA</label><input id="message" placeholder="Or type something…" maxlength="4000" autocomplete="off" required><button id="send" type="submit" aria-label="Send message">↗</button></form>
+        <p class="privacy-note">Remembers recent turns in this tab. Clear or 5 minutes idle starts fresh.</p>
+      </section>
+    </div>
+    <footer><span>BUILT FOR YOUR HOME</span><span id="pipeline-label">SYNAPSE / NOVA</span></footer>
+  </main>
+</body>
+</html>

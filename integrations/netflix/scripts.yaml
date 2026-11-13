@@ -7,7 +7,7 @@ play_netflix_title:
     returns unsupported_restart without lookup or TV commands. Use the separate restart_current_netflix
     tool only after normal playback has started. Do not work around this with arrows,
     Back, OK, rewind or force quit. Ordinary playback uses the normal link and dedicated
-    Play sequence; playback and profile selection remain unverified.'
+    Play sequence gated by TV connection and app foreground, with fresh media-session readiness/playback checks. No timed OK/profile selection. needs_netflix_ready requires user confirmation of the visible screen; preserve the pending title/episode. Requested title identity remains unverified.'
   mode: single
   fields:
     query:
@@ -258,58 +258,122 @@ play_netflix_title:
             sent to the TV; do not claim playback.
     - stop: Netflix PH link unavailable.
       response_variable: unavailable_result
+  - if: '{{ not is_state("remote.sony_xr_55x90l", "on") or states("media_player.sony_xr_55x90l_2") in ["off", "unknown", "unavailable"] or is_state("media_player.bravia_xr_55x90l", "off") }}'
+    then:
+    - action: media_player.turn_on
+      continue_on_error: true
+      target:
+        entity_id: media_player.bravia_xr_55x90l
+  - wait_template: '{{ is_state("remote.sony_xr_55x90l", "on") and states("media_player.sony_xr_55x90l_2") not in ["off", "unknown", "unavailable"] }}'
+    timeout: '00:00:30'
+    continue_on_timeout: true
+  - if: '{{ not wait.completed }}'
+    then:
+    - variables:
+        launch_result:
+          status: needs_tv_ready
+          command_sent: true
+          playback_verified: false
+          message: TV wake/remote connection was not confirmed within 30 seconds. No title or Play command sent. Check that the TV and network are available.
+    - stop: TV not ready.
+      response_variable: launch_result
   - action: remote.send_command
     target:
       entity_id: remote.sony_xr_55x90l
     data:
       command: HOME
-  - delay: 00:00:01
+  - wait_template: '{{ is_state("remote.sony_xr_55x90l", "on") and state_attr("remote.sony_xr_55x90l", "current_activity") not in [none, "", "com.netflix.ninja"] }}'
+    timeout: '00:00:05'
+    continue_on_timeout: true
+  - if: '{{ not wait.completed }}'
+    then:
+    - variables:
+        launch_result:
+          status: needs_tv_ready
+          command_sent: true
+          playback_verified: false
+          message: Home transition was not confirmed. No title or Play command sent; no timed navigation fallback.
+    - stop: Home transition unconfirmed.
+      response_variable: launch_result
   - action: media_player.play_media
     target:
       entity_id: media_player.sony_xr_55x90l_2
     data:
       media_content_type: url
-      media_content_id: https://www.netflix.com/{{ 'watch' if (season is defined and
-        episode is defined) or matches[0].get('showType') == 'movie' else 'title'
-        }}/{{ netflix_ids[0] }}?source=30
-  - wait_template: '{{ state_attr(''remote.sony_xr_55x90l'', ''current_activity'')
-      == ''com.netflix.ninja'' }}'
-    timeout: 00:00:15
+      media_content_id: https://www.netflix.com/{{ 'watch' if (season is defined and episode is defined) or matches[0].get('showType') == 'movie' else 'title' }}/{{ netflix_ids[0] }}?source=30
+  - wait_template: '{{ is_state("remote.sony_xr_55x90l", "on") and state_attr("remote.sony_xr_55x90l", "current_activity") == "com.netflix.ninja" }}'
+    timeout: '00:00:20'
     continue_on_timeout: true
-  - delay: 00:00:02
-  - if: '{{ not wait.completed or state_attr(''remote.sony_xr_55x90l'', ''current_activity'')
-      != ''com.netflix.ninja'' }}'
+  - if: '{{ not wait.completed }}'
     then:
     - variables:
-        launch_failure:
+        launch_result:
           status: needs_netflix_foreground
           title: '{{ matches[0].title }}'
           command_sent: true
           play_command_sent: false
           playback_verified: false
-          message: Title link was sent, but Netflix is not confirmed as the foreground
-            app. No Play command was sent.
-    - stop: Netflix not confirmed in foreground.
-      response_variable: launch_failure
-  - action: media_player.media_play
-    target:
-      entity_id: media_player.sony_xr_55x90l_2
+          message: Title link sent, but Netflix foreground was not confirmed. No Play or selection keys sent.
+    - stop: Netflix foreground unconfirmed.
+      response_variable: launch_result
+  - action: script.netflix_readiness_probe
+    data:
+      wait_seconds: 10
+    response_variable: readiness
+  - variables:
+      play_sent: false
+      previous_position: null
+      playback_stable: false
+      resume_retry_sent: false
+  - if: '{{ is_state("remote.sony_xr_55x90l", "on") and state_attr("remote.sony_xr_55x90l", "current_activity") == "com.netflix.ninja" }}'
+    then:
+    - action: media_player.media_play
+      target:
+        entity_id: media_player.sony_xr_55x90l_2
+    - variables:
+        play_sent: true
+    - repeat:
+        sequence:
+        - action: script.netflix_readiness_probe
+          data:
+            wait_seconds: 0
+          response_variable: readiness
+        - variables:
+            playback_stable: '{{ readiness.get("playing", false) and previous_position is number and readiness.get("position_ms") is number and readiness.position_ms >= previous_position + 500 }}'
+        - variables:
+            previous_position: '{{ readiness.get("position_ms") if readiness.get("playing", false) else none }}'
+        - if: '{{ readiness.get("ready", false) and not readiness.get("playing", false) and not resume_retry_sent }}'
+          then:
+          - action: media_player.media_play
+            target:
+              entity_id: media_player.sony_xr_55x90l_2
+          - variables:
+              resume_retry_sent: true
+        - if: '{{ not playback_stable and repeat.index < 5 }}'
+          then:
+          - delay: '00:00:01'
+        until: '{{ playback_stable or repeat.index >= 5 }}'
   - variables:
       launch_result:
-        status: playback_requested
+        status: '{{ "playback_reported" if playback_stable else "needs_netflix_ready" }}'
         title: '{{ matches[0].title }}'
         country: PH
         netflix_id: '{{ netflix_ids[0] }}'
         command_sent: true
+        play_command_sent: '{{ play_sent }}'
         playback_verified: false
-        message: Netflix title link and dedicated Play command sent. Playback and
-          profile selection are not independently verified.
+        playback_advancing: '{{ playback_stable }}'
+        resume_retry_sent: '{{ resume_retry_sent }}'
+        media_session_playing: '{{ readiness.get("playing", false) }}'
+        title_verified: false
         season: '{{ season | int if season is defined else none }}'
         episode: '{{ episode | int if episode is defined else none }}'
-        episode_title: '{{ selected_item.get(''title'') if season is defined and episode
-          is defined else none }}'
-        play_command_sent: true
-  - stop: Netflix playback requested.
+        episode_title: '{{ selected_item.get("title") if season is defined and episode is defined else none }}'
+        message: >-
+          {{ "Netflix reports a playing media session advancing across consecutive fresh checks. The requested title/episode is not independently verified."
+          if playback_stable else
+          "Netflix is foreground but playback readiness is not confirmed. It may still be loading or waiting for profile selection; the screen cannot be identified. No OK or movement keys were sent. Ask the user what is visible. If the user confirms the profile picker, select Paolo only on their instruction, then rerun this same title/episode request. Preserve the pending title and episode; do not switch service or claim playback." }}
+  - stop: Netflix readiness check finished.
     response_variable: launch_result
 netflix_restart_from_playback:
   alias: Netflix automatic restart disabled (internal)
@@ -328,3 +392,36 @@ netflix_restart_from_playback:
           No title was launched and no restart controls were sent.
   - stop: Automatic Netflix restart unavailable.
     response_variable: restart_result
+
+netflix_readiness_probe:
+  alias: Netflix media-session readiness (internal)
+  description: Read-only fresh Netflix media-session probe. No wake, navigation, playback or seek commands. Keep hidden from Assist.
+  mode: single
+  sequence:
+  - variables:
+      probe_marker: 'NOVA_NETFLIX_PROBE_{{ context.id }}_{{ (now().timestamp() * 1000000) | int }}'
+  - action: androidtv.adb_command
+    continue_on_error: true
+    target:
+      entity_id: media_player.android_tv_10_0_0_174
+    data:
+      command: "CLASSPATH=/data/local/tmp/nova-seek.jar app_process /system/bin NovaSeek inspect {{ 10 if wait_seconds | default(0) == 10 else 0 }}; echo {{ probe_marker }}"
+  - wait_template: '{{ probe_marker in (state_attr("media_player.android_tv_10_0_0_174", "adb_response") | default("", true)) }}'
+    timeout: '00:00:02'
+    continue_on_timeout: true
+  - variables:
+      probe_output: '{{ state_attr("media_player.android_tv_10_0_0_174", "adb_response") | default("", true) }}'
+      probe_fresh: '{{ wait.completed and probe_marker in (state_attr("media_player.android_tv_10_0_0_174", "adb_response") | default("", true)) }}'
+  - variables:
+      probe_lines: '{{ probe_output | regex_findall("(?m)^NOVA_SEEK_RESULT=(.*)$") }}'
+  - variables:
+      probe_result: '{{ probe_lines[0] | from_json({}) if probe_fresh and probe_lines | count == 1 else {} }}'
+  - variables:
+      ready: '{{ probe_result is mapping and probe_result.get("status") == "ready" and probe_result.get("package") == "com.netflix.ninja" and probe_result.get("state_before") in [2, 3] and is_state("remote.sony_xr_55x90l", "on") and state_attr("remote.sony_xr_55x90l", "current_activity") == "com.netflix.ninja" }}'
+  - variables:
+      readiness_result:
+        ready: '{{ ready }}'
+        playing: '{{ ready and probe_result.get("state_before") == 3 }}'
+        position_ms: '{{ probe_result.get("position_before_ms") if ready and probe_result.get("position_before_ms") is number else none }}'
+  - stop: Read-only Netflix readiness probe finished.
+    response_variable: readiness_result

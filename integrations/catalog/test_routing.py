@@ -49,6 +49,24 @@ class RoutingTest(unittest.TestCase):
         r = resolve({'query': 'Mean Girls', 'year': 2004}, SETTINGS, rows)
         self.assertEqual(r['playback_arguments']['year'], 2004)
 
+    def test_version_clarification_preserves_episode_and_automatic_preference(self):
+        settings = dict(SETTINGS, kodi_fallback=True)
+        rows = [title('Suits', ('netflix', 'prime'), 2011),
+                title('Suits', ('prime',), 2018)]
+        request = {'query': 'Suits', 'media_type': 'series', 'season': 2, 'episode': 3}
+        clarification = resolve(request, settings, rows)
+        self.assertEqual(clarification['status'], 'needs_clarification')
+        self.assertEqual(clarification['request_context'], request)
+        selected = resolve(dict(clarification['request_context'], year=2011), settings, rows)
+        self.assertEqual(selected['service'], 'netflix')
+        self.assertEqual(selected['playback_arguments']['season'], 2)
+        self.assertEqual(selected['playback_arguments']['episode'], 3)
+        self.assertNotEqual(selected['playback_tool'], 'script__play_kodi_pov')
+        malformed = resolve({'query': 'Suits', 'year': 2011, 'episode_request': 'S2E3'}, settings, rows)
+        self.assertEqual(malformed['status'], 'unsupported_request')
+        self.assertIn('numeric season/episode', malformed['message'])
+        self.assertNotIn('playback_tool', malformed)
+
     def test_movie_series_collision(self):
         rows = [title(kind='movie'), title(kind='series')]
         self.assertEqual(resolve({'query': 'Severance'}, SETTINGS, rows)['status'], 'needs_clarification')
@@ -80,7 +98,28 @@ class RoutingTest(unittest.TestCase):
         request = {'query': 'Severance', 'season': 1, 'episode': 2, 'from_start': False}
         r = resolve(request, SETTINGS, [title(services=('netflix', 'hbo'))])
         self.assertEqual(r['playback_arguments'], dict(query='Severance', season=1, episode=2, from_start=False))
-        self.assertEqual(resolve(request, SETTINGS, [title()])['status'], 'unsupported_request')
+        self.assertEqual(resolve(request, SETTINGS, [title()])['playback_arguments'], {'query':'Severance','year':2022,'start_playback':True,'season':1,'episode':2})
+
+    def test_episode_selectors_exclude_movies_before_clarification(self):
+        rows = [title('The Boys', ('prime',), 2019, 'series'),
+                title('The Boys', (), 2024, 'movie'), title('The Boys', (), 1962, 'movie')]
+        r = resolve({'query': 'The Boys', 'season': 2, 'episode': 2}, SETTINGS, rows)
+        self.assertEqual(r['service'], 'prime')
+        self.assertEqual(r['playback_arguments']['year'], 2019)
+        self.assertEqual((r['playback_arguments']['season'], r['playback_arguments']['episode']), (2, 2))
+        for selector in ({'season': 2, 'episode': 2}, {'latest_episode': True}, {'episode_request': 'the pilot'}):
+            request = {'query': 'The Boys', **selector}
+            with self.subTest(selector=selector):
+                r = resolve(request, SETTINGS, rows[1:])
+                self.assertEqual(r['status'], 'needs_title_correction')
+                self.assertEqual(r['candidates'], [])
+                r = resolve(request, SETTINGS, rows + [title('The Boys', (), 2025, 'series')])
+                self.assertEqual(r['status'], 'needs_clarification')
+                self.assertEqual([c['year'] for c in r['candidates']], [2019, 2025])
+                self.assertEqual(r['request_context'], request)
+                self.assertEqual(resolve(dict(request, media_type='movie'), SETTINGS, rows)['status'], 'unsupported_request')
+        self.assertEqual(resolve({'query': 'The Boys'}, SETTINGS, rows)['status'], 'needs_clarification')
+        self.assertEqual(resolve({'query': 'The Boys', 'media_type': 'movie', 'year': 2024}, SETTINGS, rows)['status'], 'unavailable')
 
     def test_correction_candidates(self):
         r = resolve({'query': 'Sever ants'}, SETTINGS, [title()])
@@ -115,6 +154,41 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(resolve({'query': 'Example'}, settings, rows)['status'], 'needs_episode')
         r = resolve({'query': 'Example', 'season': 2, 'episode': 3}, settings, rows)
         self.assertEqual(r['playback_arguments'], {'query': 'Example', 'year': 2022, 'media_type': 'series', 'season': 2, 'episode': 3})
+
+    def test_latest_episode_is_preserved_for_kodi_fallback_only(self):
+        settings = dict(SETTINGS, kodi_fallback=True)
+        request = {'query': 'Example', 'media_type': 'series', 'latest_episode': True}
+        r = resolve(request, settings, [title('Example', (), 2002, 'series')])
+        self.assertEqual(r['playback_arguments'], {'query': 'Example', 'media_type': 'series', 'year': 2002, 'latest_episode': True})
+        self.assertEqual(resolve(request, settings, [title('Example', ('netflix',), 2002, 'series')])['status'], 'unsupported_request')
+        self.assertEqual(resolve(dict(request,media_type='movie'), settings, [title('Example', (), 2002, 'movie')])['status'], 'unsupported_request')
+        with self.assertRaises(ValueError):
+            validate(dict(request,season=1,episode=1), settings)
+
+    def test_indirect_episode_returns_metadata_even_if_model_supplies_numbers(self):
+        settings = dict(SETTINGS, kodi_fallback=True)
+        description = 'play the first episode of the 2nd to the last season of south park'
+        request = {'query': 'South Park', 'media_type': 'series', 'episode_request': description, 'season': 2, 'episode': 1}
+        r = resolve(request, settings, [title('South Park', (), 1997, 'series')])
+        self.assertEqual(r['status'], 'episode_lookup_required')
+        self.assertEqual(r['metadata_tool'], 'script__browse_kodi_series')
+        self.assertEqual(r['metadata_arguments'], {'query': 'South Park', 'year': 1997})
+        self.assertEqual(r['episode_request'], description)
+        self.assertNotIn('playback_tool', r)
+        self.assertNotIn('playback_arguments', r)
+        self.assertFalse(r['command_sent'])
+        self.assertEqual(resolve(request, settings, [title('South Park', ('netflix',), 1997, 'series')])['status'], 'unsupported_request')
+        self.assertEqual(resolve({'query':'South Park','season':2,'episode':1}, settings, [title('South Park', (),1997,'series')])['playback_arguments']['season'],2)
+        with self.assertRaises(ValueError): validate(dict(request, episode_request=[]), settings)
+
+    def test_numbered_episode_routes_to_all_native_services(self):
+        request = {'query':'Example','season':1,'episode':2}
+        for service in ['apple','hbo','prime']:
+            r = resolve(request, SETTINGS, [title('Example',(service,),2022,'series')])
+            self.assertEqual(r['service'], service)
+            self.assertEqual((r['playback_arguments']['season'],r['playback_arguments']['episode']), (1,2))
+            self.assertTrue(r['playback_arguments']['start_playback'])
+            self.assertEqual(resolve(dict(request,from_start=True),SETTINGS,[title('Example',(service,),2022,'series')])['status'],'unsupported_request')
 
     def test_input_validation(self):
         for data in ({'query': ''}, {'query': 'x', 'year': True}, {'query': 'x', 'season': 1},

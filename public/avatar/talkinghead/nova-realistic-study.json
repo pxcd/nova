@@ -1,0 +1,64 @@
+{
+  "model_sha256": "dd246de61eeedae117c25eae6d9a1c6c55e54a63ef17eb9cdd44350977521a48",
+  "base_sha256": "63c645a2a863b9972e9a9c2ed576a1de4c390b8475508e1473e69c87a3ee299c",
+  "base_source": "https://github.com/met4citizen/TalkingHead/blob/1563de184c19b310de4b636664d5835e2c74dbba/avatars/mpfb.glb",
+  "base_license": "CC0, as stated by upstream TalkingHead README",
+  "hair_source": "Official MakeHuman system assets bob01",
+  "hair_license": "CC0",
+  "meshes": [
+    {
+      "name": "base",
+      "vertices": 11779,
+      "targets": 66,
+      "max_displacement_m": 0.010327485390007496
+    },
+    {
+      "name": "high-poly",
+      "vertices": 1076,
+      "targets": 8,
+      "max_displacement_m": 0.005407110322266817
+    },
+    {
+      "name": "mind_eyebrows_02",
+      "vertices": 12243,
+      "targets": 23,
+      "max_displacement_m": 0.006492543499916792
+    },
+    {
+      "name": "mind_eyelashes_02",
+      "vertices": 16992,
+      "targets": 33,
+      "max_displacement_m": 0.0032103133853524923
+    },
+    {
+      "name": "teeth_base",
+      "vertices": 4494,
+      "targets": 12,
+      "max_displacement_m": 0.004747631959617138
+    },
+    {
+      "name": "tongue01",
+      "vertices": 253,
+      "targets": 13,
+      "max_displacement_m": 0.004721523728221655
+    }
+  ],
+  "limitations": [
+    "Experimental landmark-based likeness fit, not a calibrated sculpt",
+    "Portrait shading is projected; skin/eye matching remains approximate",
+    "Layered portrait hair cards over a full 3D bob; near-frontal views only",
+    "Reference body and clothing retained",
+    "No production NOVA avatar change"
+  ],
+  "hair_asset_hashes": {
+    "bob01.obj": "d7fb73806f47ee37ba3c37bcfadff40a91ba99635d08c3e02d94b4acbf97c231",
+    "bob01.mhmat": "9c3015044a832fb9a72a5d2f28218914ebfbdf6725cfd237cc53a3d95f054e3b",
+    "bob01_diffuse.png": "2b38bc7a028e06e8e633accb7fe2dd1b2bacbb9d32463df73f39f82e63ef9009"
+  },
+  "hair_pack_url": "https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip",
+  "source_portrait_sha256": "ad888188d793dc428f792ef8ba4e257c9326318d32c57aba38ba2c98b3bdd128",
+  "visual_review": {
+    "status": "rejected_for_promotion",
+    "reason": "Facial projection, eyes and hair alignment remain visibly unnatural. Do not use as production NOVA avatar."
+  }
+}

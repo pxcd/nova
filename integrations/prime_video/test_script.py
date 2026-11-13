@@ -1,4 +1,4 @@
-import asyncio,copy,yaml
+import asyncio,copy,os,yaml
 from homeassistant.core import HomeAssistant,Context,SupportsResponse
 from homeassistant.helpers.script import Script
 from homeassistant.helpers import config_validation as cv
@@ -10,13 +10,16 @@ def no_delays(value):
  if isinstance(value,dict):return {k:no_delays(v) for k,v in value.items()}
  return value
 async def main():
- hass=HomeAssistant('/tmp/apple-script-check');raw=yaml.safe_load(open('/config/scripts.yaml'))['play_prime_video_title']['sequence'];calls=[];response={'status':200,'content':[movie()]};adb_ok=True
+ hass=HomeAssistant('/tmp/apple-script-check');raw=yaml.safe_load(open(os.environ.get('NOVA_STREAMING_SCRIPTS_PATH','/config/scripts.yaml')))['play_prime_video_title']['sequence'];calls=[];response={'status':200,'content':[movie()]};adb_ok=True
  async def lookup(call):return response
  async def capture(call):
   calls.append((call.domain,dict(call.data)))
   if call.domain=='androidtv':hass.states.async_set('media_player.android_tv_10_0_0_174','idle',{'adb_response':('Status: ok\n' if adb_ok else 'Error\n')+'NOVA_PRIME_'+call.context.id})
  hass.services.async_register('rest_command','netflix_title_search',lookup,supports_response=SupportsResponse.ONLY)
  for domain,name in [('androidtv','adb_command'),('remote','send_command')]:hass.services.async_register(domain,name,capture)
+ controls=Script(hass,cv.SCRIPT_SCHEMA(no_delays(yaml.safe_load(open(os.environ.get('NOVA_STREAMING_SCRIPTS_PATH','/config/scripts.yaml')))['streaming_app_profile_and_play']['sequence'])),'Shared playback controls','script')
+ async def run_controls(call):await controls.async_run(dict(call.data),call.context)
+ hass.services.async_register('script','streaming_app_profile_and_play',run_controls)
  script=Script(hass,cv.SCRIPT_SCHEMA(no_delays(raw)),'Prime Video check','script')
  async def run(**kwargs):
   calls.clear();return (await script.async_run({'query':'Fallout',**kwargs},Context())).service_response

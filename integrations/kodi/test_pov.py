@@ -1,6 +1,8 @@
+from datetime import date
 import copy
 import unittest
-from pov import perform, prefer_english, source_resolution, source_movie_year, wait_for_kodi, KodiUnavailable
+from unittest.mock import patch
+from pov import perform, latest_episode, browse_episode_catalog, prefer_english, select_subtitle_native, source_resolution, source_movie_year, wait_for_kodi, KodiUnavailable
 
 MOVIE = "plugin://plugin.video.pov/?mode=play_media&mediatype=movie&tmdb_id=12153"
 SERIES = "plugin://plugin.video.pov/?mode=build_season_list&tmdb_id=2190"
@@ -69,6 +71,49 @@ class FakeRPC:
         raise AssertionError((method, params))
 
 
+class NativeSubtitleRPC:
+    def __init__(self, languages, index=0, enabled=False):
+        self.languages, self.index, self.enabled = languages, index, enabled
+        self.actions = []
+
+    def __call__(self, method, params):
+        if method == "Player.GetActivePlayers":
+            return [{"playerid": 0, "type": "video"}]
+        if method == "XBMC.GetInfoBooleans":
+            return {"VideoPlayer.HasSubtitles": bool(self.languages), "VideoPlayer.SubtitlesEnabled": self.enabled}
+        if method == "XBMC.GetInfoLabels":
+            return {"VideoPlayer.SubtitlesLanguage": self.languages[self.index] if self.languages else ""}
+        if method == "Input.ExecuteAction":
+            action = params["action"]
+            self.actions.append(action)
+            if action == "showsubtitles":
+                self.enabled = not self.enabled
+            elif action == "nextsubtitle":
+                self.index = (self.index + 1) % len(self.languages)
+                if self.index == 0: self.enabled = False
+            return "OK"
+        raise AssertionError(method)
+
+
+class EpisodeCatalogRPC:
+    def __init__(self, seasons):
+        self.seasons = seasons
+        self.calls = []
+        self.partial = False
+
+    def __call__(self, method, params):
+        self.calls.append(method)
+        if method != "Files.GetDirectory": raise AssertionError(method)
+        path = params["directory"]
+        if path == SERIES:
+            files = [{"season": n, "file": SEASON.replace("season=28", "season=" + str(n))} for n in self.seasons]
+        else:
+            from urllib.parse import parse_qs,urlsplit
+            season = int(parse_qs(urlsplit(path).query)["season"][0])
+            files = [dict(row, season=row.get("season", season), file=row.get("file", EPISODE.replace("season=28", "season=" + str(season)).replace("episode=1", "episode=" + str(row["episode"])))) for row in self.seasons[season]]
+        return {"files": files, "limits": {"total": len(files) + int(self.partial)}}
+
+
 class POVTest(unittest.TestCase):
     def test_default_resolution_scans_for_highest_matching_movie(self):
         rpc = FakeRPC()
@@ -111,6 +156,141 @@ class POVTest(unittest.TestCase):
         self.assertEqual(r["status"], "invalid_resolution")
         self.assertEqual(rpc.calls, [])
 
+    def test_empty_misrouted_json_subtitles_use_native_read_path(self):
+        rpc = FakeRPC()
+        rpc.tracks["type"] = "audio"
+        with patch("pov.select_subtitle_native", return_value="selected") as native:
+            self.assertEqual(prefer_english(rpc, 1, sleep=lambda _: None)["subtitles"], "selected")
+            native.assert_called_once()
+
+    def test_browse_exposes_catalog_not_hardcoded_relative_answers(self):
+        rpc = EpisodeCatalogRPC({0: [{"episode": 1, "firstaired": "2026-01-01"}],
+                                 1: [{"episode": 1, "title": "Pilot", "firstaired": "2025-01-01"}],
+                                 5: [{"episode": 1, "firstaired": "2026-01-01"}, {"episode": 7, "firstaired": "2026-02-01"}],
+                                 28: [{"episode": 1, "firstaired": "2026-10-01"}],
+                                 29: [{"episode": 1, "firstaired": "2027-01-01"}]})
+        r = browse_episode_catalog(rpc, SERIES, {}, today=date(2026,11,3))
+        self.assertEqual(r["aired_regular_seasons"], [1,5,28])
+        self.assertTrue(r["ordering_verified"])
+        self.assertEqual(r["seasons"][1]["first_aired_episode"]["episode"], 1)
+        self.assertEqual(r["seasons"][1]["last_aired_episode"]["episode"], 7)
+        self.assertNotIn("file", str(r))
+        self.assertEqual(set(rpc.calls), {"Files.GetDirectory"})
+
+    def test_browse_selected_season_and_pagination(self):
+        rpc = EpisodeCatalogRPC({1: [{"episode": i, "firstaired": "2025-01-01"} for i in range(1,102)]})
+        r = browse_episode_catalog(rpc, SERIES, {}, season=1, today=date(2026,11,3))
+        self.assertEqual((len(r["episodes"]),r["next_episode_offset"]), (100,100))
+        r = browse_episode_catalog(rpc, SERIES, {}, season=1, offset=100, today=date(2026,11,3))
+        self.assertEqual(r["episodes"][0]["episode"], 101)
+        self.assertIsNone(r["next_episode_offset"])
+        self.assertEqual(browse_episode_catalog(rpc, SERIES, {}, season=2)["status"], "unavailable")
+
+    def test_browse_uncertain_dates_do_not_certify_season_order(self):
+        for aired in [None,"2026-11-03"]:
+            rpc = EpisodeCatalogRPC({1: [{"episode": 1, "firstaired": aired}]})
+            r = browse_episode_catalog(rpc, SERIES, {}, today=date(2026,11,3))
+            self.assertFalse(r["ordering_verified"])
+
+    def test_browse_operation_never_launches_or_changes_player(self):
+        rpc = FakeRPC()
+        r = perform(rpc, {"operation": "browse", "query": "South Park", "media_type": "series"})
+        self.assertEqual(r["status"], "episode_catalog")
+        self.assertEqual({m for m,_ in rpc.calls}, {"Files.GetDirectory"})
+        for extra in [{"season": True}, {"episode_offset": -1}, {"episode_offset": 100}, {"season": 0}]:
+            rpc.calls.clear()
+            r = perform(rpc, {"operation":"browse", "query":"South Park", "media_type":"series", **extra})
+            self.assertEqual(r["status"], "failed")
+            self.assertEqual(rpc.calls, [])
+
+    def test_latest_excludes_future_and_specials_across_unsorted_seasons(self):
+        rpc = EpisodeCatalogRPC({29: [{"episode": 1, "firstaired": "2026-12-01"}], 0: [{"episode": 99, "firstaired": "2026-11-01"}],
+                                 28: [{"episode": 2, "firstaired": "2026-10-30"}, {"episode": 1, "firstaired": "2026-10-20"}],
+                                 27: [{"episode": 9, "firstaired": "2026-10-01"}]})
+        r = latest_episode(rpc, SERIES, {"title": "South Park"}, date(2026,11,3))
+        self.assertEqual((r["season"], r["episode"]), (28,2))
+        self.assertEqual(r["selection_mode"], "latest_aired")
+        self.assertEqual(set(rpc.calls), {"Files.GetDirectory"})
+        self.assertFalse(r["command_sent"])
+
+    def test_latest_uses_air_date_then_episode_number(self):
+        rpc = EpisodeCatalogRPC({1: [{"episode": 8, "firstaired": "2026-10-31"}, {"episode": 9, "firstaired": "2026-10-31"}],
+                                 2: [{"episode": 1, "firstaired": "2026-10-30"}]})
+        r = latest_episode(rpc, SERIES, {}, date(2026,11,3))
+        self.assertEqual((r["season"], r["episode"]), (1,9))
+
+    def test_latest_missing_invalid_and_same_day_dates_require_clarification(self):
+        for aired in [None, "", "2026-02-30", "2026-11-03"]:
+            rpc = EpisodeCatalogRPC({1: [{"episode": 1, "firstaired": "2026-10-01"}, {"episode": 2, "firstaired": aired}]})
+            r = latest_episode(rpc, SERIES, {}, date(2026,11,3))
+            self.assertEqual(r["status"], "needs_clarification", aired)
+            self.assertNotIn("file", r)
+
+    def test_latest_no_aired_regular_episode_is_unavailable(self):
+        for seasons in [{0: [{"episode": 1, "firstaired": "2026-10-01"}]}, {1: [{"episode": 1, "firstaired": "2027-01-01"}]}]:
+            self.assertEqual(latest_episode(EpisodeCatalogRPC(seasons), SERIES, {}, date(2026,11,3))["status"], "unavailable")
+
+    def test_latest_partial_or_failed_scan_never_guesses(self):
+        rpc = EpisodeCatalogRPC({1: [{"episode": 1, "firstaired": "2026-10-01"}]})
+        rpc.partial = True
+        self.assertEqual(latest_episode(rpc, SERIES, {}, date(2026,11,3))["status"], "needs_clarification")
+        def broken(method, params): raise RuntimeError("unavailable")
+        self.assertEqual(latest_episode(broken, SERIES, {}, date(2026,11,3))["status"], "needs_clarification")
+        self.assertEqual(latest_episode(rpc, SEASON, {}, date(2026,11,3))["status"], "needs_clarification")
+
+    def test_latest_conflicting_duplicate_or_unsafe_link_never_resolves(self):
+        for rows in [[{"episode": 1, "firstaired": "2026-10-01"}, {"episode": 1, "firstaired": "2026-10-02"}],
+                     [{"episode": 1, "firstaired": "2026-10-01", "file": "plugin://other/?mode=play_media"}]]:
+            self.assertEqual(latest_episode(EpisodeCatalogRPC({1: rows}), SERIES, {}, date(2026,11,3))["status"], "needs_clarification")
+
+    def test_latest_request_cannot_conflict_with_numbers_or_movie(self):
+        for request in [{"media_type": "movie"}, {"media_type": "series", "season": 28}, {"media_type": "series", "latest_episode": "yes"}]:
+            rpc = FakeRPC()
+            r = perform(rpc, dict(query="South Park", operation="play", latest_episode=True) | request, sleep=lambda _: None)
+            self.assertEqual(r["status"], "needs_clarification")
+            self.assertEqual(rpc.calls, [])
+
+    def test_latest_resolution_reuses_normal_playback_and_english_preferences(self):
+        rpc = FakeRPC()
+        rpc.playing = True
+        rpc.movie["title"] = "South Park"
+        rpc.source_names = ["SOUTH PARK S28E01 1080P"]
+        rpc.tracks.update(audiostreams=[{"index": 0, "language": "eng"}], subtitles=[{"index": 1, "language": "eng"}])
+        r = perform(rpc, {"operation": "play", "query": "South Park", "media_type": "series", "latest_episode": True}, sleep=lambda _: None)
+        self.assertTrue(r["playback_verified"])
+        self.assertEqual((r["season"],r["episode"]), (28,1))
+        self.assertEqual(r["english_tracks"], {"audio": "selected", "subtitles": "selected"})
+        self.assertTrue(rpc.tracks["subtitleenabled"])
+
+    def test_native_subtitles_select_first_english_and_enable_it(self):
+        for index, enabled in [(0, False), (2, True)]:
+            rpc = NativeSubtitleRPC(["rus", "eng", "eng"], index, enabled)
+            self.assertEqual(select_subtitle_native(rpc, 0, lambda _: None), "selected")
+            self.assertEqual(rpc.index, 1)
+            self.assertTrue(rpc.enabled)
+
+    def test_native_subtitles_restore_original_when_english_missing(self):
+        for index, enabled in [(0, False), (1, False), (1, True)]:
+            rpc = NativeSubtitleRPC(["rus", "fra"], index, enabled)
+            self.assertEqual(select_subtitle_native(rpc, 0, lambda _: None), "not_available")
+            self.assertEqual((rpc.index, rpc.enabled), (index, enabled))
+
+    def test_native_subtitles_do_nothing_when_truly_missing(self):
+        rpc = NativeSubtitleRPC([])
+        self.assertEqual(select_subtitle_native(rpc, 0, lambda _: None), "not_available")
+        self.assertEqual(rpc.actions, [])
+
+    def test_native_subtitles_missing_action_progress_is_bounded(self):
+        class Stuck(NativeSubtitleRPC):
+            def __call__(self, method, params):
+                if method == "Input.ExecuteAction":
+                    self.actions.append(params["action"])
+                    return "OK"
+                return super().__call__(method, params)
+        rpc = Stuck(["rus", "eng"], enabled=True)
+        self.assertEqual(select_subtitle_native(rpc, 0, lambda _: None), "unverified")
+        self.assertEqual(len(rpc.actions), 34)
+
     def test_first_english_tracks_and_subtitle_enable(self):
         rpc = FakeRPC()
         rpc.tracks.update(audiostreams=[{"index": 0, "language": "jpn"}, {"index": 3, "language": "eng"}, {"index": 1, "language": "en-US"}],
@@ -145,8 +325,15 @@ class POVTest(unittest.TestCase):
                         self.tracks["subtitleenabled"] = not self.tracks["subtitleenabled"]
                     elif action == "nextsubtitle":
                         current = self.tracks["currentsubtitle"]["index"]
-                        self.tracks["currentsubtitle"] = {"index": (current + 1) % 2}
+                        next_index = (current + 1) % 2
+                        self.tracks["currentsubtitle"] = {"index": next_index}
+                        if next_index == 0: self.tracks["subtitleenabled"] = False
                     return "OK"
+                if method == "XBMC.GetInfoBooleans":
+                    return {"VideoPlayer.HasSubtitles": True, "VideoPlayer.SubtitlesEnabled": self.tracks["subtitleenabled"]}
+                if method == "XBMC.GetInfoLabels" and params["labels"] == ["VideoPlayer.SubtitlesLanguage"]:
+                    index = self.tracks["currentsubtitle"]["index"]
+                    return {"VideoPlayer.SubtitlesLanguage": ["rus", "eng"][index]}
                 return super().__call__(method, params)
         rpc = WrongPlaylistRPC()
         rpc.playing = True

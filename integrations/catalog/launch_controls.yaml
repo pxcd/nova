@@ -1,0 +1,81 @@
+streaming_app_profile_and_play:
+  alias: Streaming app profile and playback controls (internal)
+  description: Existing provider-specific profile and Play controls, shared by ordinary titles and exact-episode deep links. Keep hidden from Assist. Does not choose content or navigate season/episode lists.
+  mode: single
+  sequence:
+  - choose:
+    - conditions: "{{ provider == 'hbo' }}"
+      sequence:
+        - delay: 00:00:08
+        - action: remote.send_command
+          target:
+            entity_id: remote.sony_xr_55x90l
+          data:
+            command: DPAD_CENTER
+        - if: '{{ start_playback | default(true) }}'
+          then:
+          - delay: 00:00:05
+          - if: '{{ from_start | default(false) }}'
+            then:
+            - action: remote.send_command
+              target:
+                entity_id: remote.sony_xr_55x90l
+              data:
+                command:
+                - DPAD_RIGHT
+                - DPAD_CENTER
+                delay_secs: 0.4
+            else:
+            - action: remote.send_command
+              target:
+                entity_id: remote.sony_xr_55x90l
+              data:
+                command: DPAD_CENTER
+    - conditions: "{{ provider == 'prime' }}"
+      sequence:
+        - if: '{{ select_profile | default(true) }}'
+          then:
+          - delay: 00:00:08
+          - action: remote.send_command
+            target:
+              entity_id: remote.sony_xr_55x90l
+            data:
+              command: DPAD_CENTER
+        - if: '{{ start_playback | default(true) }}'
+          then:
+          - delay: 00:00:05
+          - if: '{{ from_start | default(false) }}'
+            then:
+            - action: remote.send_command
+              target:
+                entity_id: remote.sony_xr_55x90l
+              data:
+                command:
+                - DPAD_UP
+                - DPAD_CENTER
+                delay_secs: 0.4
+            else:
+            - action: remote.send_command
+              target:
+                entity_id: remote.sony_xr_55x90l
+              data:
+                command: DPAD_CENTER
+    - conditions: "{{ provider == 'apple' }}"
+      sequence:
+        - if: '{{ start_playback | default(true) }}'
+          then:
+          - delay: 00:00:10
+          - action: remote.send_command
+            target:
+              entity_id: remote.sony_xr_55x90l
+            data:
+              command: DPAD_CENTER
+          - delay: 00:00:02
+          - action: remote.send_command
+            target:
+              entity_id: remote.sony_xr_55x90l
+            data:
+              command: MEDIA_PLAY
+    default:
+    - stop: Unsupported streaming provider.
+      error: true

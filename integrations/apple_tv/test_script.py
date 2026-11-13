@@ -10,13 +10,26 @@ def no_delays(value):
  if isinstance(value,dict):return {k:no_delays(v) for k,v in value.items()}
  return value
 async def main():
- hass=HomeAssistant('/tmp/apple-script-check');raw=yaml.safe_load(open(os.environ.get('NOVA_APPLE_SCRIPTS_PATH','/config/scripts.yaml')))['play_apple_tv_title']['sequence'];calls=[];response={'status':200,'content':[movie()]};adb_ok=True
+ hass=HomeAssistant('/tmp/apple-script-check');raw=yaml.safe_load(open(os.environ.get('NOVA_APPLE_SCRIPTS_PATH','/config/scripts.yaml')))['play_apple_tv_title']['sequence'];calls=[];response={'status':200,'content':[movie()]};adb_ok=True;wake_ok=True
+ def awake():
+  for entity,state in [('media_player.bravia_xr_55x90l','on'),('remote.sony_xr_55x90l','on'),('media_player.sony_xr_55x90l_2','on'),('media_player.android_tv_10_0_0_174','idle')]:hass.states.async_set(entity,state)
+ def shorten(v):
+  if isinstance(v,list):
+   for x in v:shorten(x)
+  if isinstance(v,dict):
+   if 'wait_template' in v:v['timeout']={'milliseconds':100}
+   for x in v.values():shorten(x)
+ shorten(raw);awake()
  async def lookup(call):return response
  async def capture(call):
   calls.append((call.domain,dict(call.data)))
+  if call.domain=='media_player' and wake_ok:awake()
   if call.domain=='androidtv':hass.states.async_set('media_player.android_tv_10_0_0_174','idle',{'adb_response':('Status: ok\n' if adb_ok else 'Error\n')+'NOVA_APPLE_'+call.context.id})
  hass.services.async_register('rest_command','netflix_title_search',lookup,supports_response=SupportsResponse.ONLY)
- for domain,name in [('androidtv','adb_command'),('remote','send_command')]:hass.services.async_register(domain,name,capture)
+ for domain,name in [('androidtv','adb_command'),('remote','send_command'),('media_player','turn_on')]:hass.services.async_register(domain,name,capture)
+ controls=Script(hass,cv.SCRIPT_SCHEMA(no_delays(yaml.safe_load(open(os.environ.get('NOVA_APPLE_SCRIPTS_PATH','/config/scripts.yaml')))['streaming_app_profile_and_play']['sequence'])),'Shared playback controls','script')
+ async def run_controls(call):await controls.async_run(dict(call.data),call.context)
+ hass.services.async_register('script','streaming_app_profile_and_play',run_controls)
  script=Script(hass,cv.SCRIPT_SCHEMA(no_delays(raw)),'Apple TV check','script')
  async def run(**kwargs):
   calls.clear();return (await script.async_run({'query':'Severance',**kwargs},Context())).service_response
@@ -24,6 +37,9 @@ async def main():
  command=next(data['command'] for domain,data in calls if domain=='androidtv');assert '-p com.apple.atve.sony.appletv' in command and URL in command
  assert [d['command'] for domain,d in calls if domain=='remote']==['HOME','DPAD_CENTER','MEDIA_PLAY']
  result=await run(start_playback=False);assert result['status']=='title_link_sent';assert [d['command'] for domain,d in calls if domain=='remote']==['HOME']
+ hass.states.async_set('media_player.bravia_xr_55x90l','off');result=await run();assert result['status']=='playback_requested' and calls[0][0]=='media_player'
+ wake_ok=False;hass.states.async_set('media_player.bravia_xr_55x90l','off');result=await run();assert result['status']=='needs_tv_ready' and len(calls)==1;wake_ok=True;awake()
+ print('PASS standby wake and timeout prevent premature launch')
  print('PASS playback targets installed Apple app; details-only sends neither OK nor Play')
  response={'status':200,'content':[movie(year=2004),movie(year=2024)]};result=await run(year=2004,start_playback=False);assert result['year']==2004
  result=await run();assert result['status']=='needs_clarification' and not calls
