@@ -22,3 +22,6 @@ adbkey.pub
 *.pfx
 
 .nova_catalog_cache/
+
+# Isolated CI environment
+.ci-venv/
