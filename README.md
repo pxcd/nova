@@ -36,7 +36,7 @@ For localhost-only HTTP development, run `HOST=127.0.0.1 PORT=8789 node server.j
 
 No service worker caches authenticated responses or audio. Nothing depends on a third-party font or CDN.
 
-## Checks
+## Automated checks
 
 `npm test` checks PCM conversion, HA audio framing, conversation isolation and expiry, fresh and follow-up requests, late timeout handling, and the audio proxy boundary. Actual microphone permissions, playback, and certificate trust must also be tested on an iPhone.
 
