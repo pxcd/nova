@@ -46,7 +46,7 @@ No service worker caches authenticated responses or audio. Nothing depends on a 
 
 Keep `.env`, `.local/`, populated HA `secrets.yaml`, and ADB pairing keys outside version control. Generate local TLS certificates on each installation. This repository is source/configuration, not a replacement for a separately protected Home Assistant backup.
 
-## Model providers
+## Inference providers
 
 The original GPT-OSS pipeline remains NOVA's configured webapp pipeline. **Qwen3 4B** is a separately selectable HA Assist pipeline using the same LM Studio server, model `qwen/qwen3-4b-2507`, and the same NOVA instructions/tools. See `home-assistant/qwen3-4b.json` and `experiments/qwen3-4b/` for reference settings and checks. To change the webapp's provider, deliberately update `HA_PIPELINE_ID` in the private `.env` and restart NOVA.
 
